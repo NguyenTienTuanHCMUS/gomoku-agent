@@ -72,7 +72,10 @@ models/pv1/         policy + value head
 docs/               trang web (GitHub Pages): index.html, engine-worker.js, model.onnx, explainer.html
 ```
 
-## Nguồn
+## Nguồn và giấy phép
 
-- Ván cờ: kết quả giải [Gomocup 2019](https://gomocup.org/results/gomocup-result-2019/) (hạng Freestyle).
-- [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) 1.20.1 (MIT), đặt trong `docs/vendor/ort/`.
+Mã nguồn, model đã train và tài liệu của repo này dùng [giấy phép MIT](LICENSE): bạn được dùng, sửa và phân phối lại, chỉ cần giữ thông báo bản quyền.
+
+Các phần của bên thứ ba giữ nguyên giấy phép gốc của chúng:
+- Ván cờ trong `data/` được xử lý từ kết quả giải [Gomocup 2019](https://gomocup.org/results/gomocup-result-2019/) (hạng Freestyle).
+- [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) 1.20.1 trong `docs/vendor/ort/` thuộc Microsoft, giấy phép MIT.
