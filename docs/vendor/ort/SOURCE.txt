@@ -1,0 +1,2 @@
+onnxruntime-web 1.20.1 (wasm build), copied unmodified from https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/
+Copyright (c) Microsoft Corporation. Licensed under the MIT License: https://github.com/microsoft/onnxruntime/blob/main/LICENSE

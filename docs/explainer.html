@@ -1,0 +1,991 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body { margin: 0; }</style>
+<title>Gomoku Policy CNN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<style>
+/* Layout: one reading column (~44rem) on a cool grey ground; figures widen to the 64rem page; boards are wood-toned grids with black/white stones and a red frame for "the move that was played". */
+:root {
+  --bg: #f2f4f1; --surface: #ffffff; --fg: #1a1e1c; --muted: #5a625d; --line: #d5dad4;
+  --accent: #17705a; --accent-soft: #dcede6; --mark: #cc3a27;
+  --board: #e3c892; --board-line: #a7895a; --stone-dark: #1b1b1b; --stone-light: #f8f6f0; --stone-edge: #6f6148;
+  --code-bg: #e8ebe7;
+  --f-body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121514; --surface: #1a1e1c; --fg: #e4e8e5; --muted: #9aa39e; --line: #2e3531;
+    --accent: #58c4a4; --accent-soft: #1c3a31; --mark: #ff6a55;
+    --board: #6b5835; --board-line: #93805a; --stone-dark: #101010; --stone-light: #eeebe3; --stone-edge: #4d4332;
+    --code-bg: #232927; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121514; --surface: #1a1e1c; --fg: #e4e8e5; --muted: #9aa39e; --line: #2e3531;
+  --accent: #58c4a4; --accent-soft: #1c3a31; --mark: #ff6a55;
+  --board: #6b5835; --board-line: #93805a; --stone-dark: #101010; --stone-light: #eeebe3; --stone-edge: #4d4332;
+  --code-bg: #232927; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 16px; line-height: 1.65; }
+.page { max-width: 64rem; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2.5rem 5rem; }
+.col { max-width: 44rem; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.75rem; }
+h2 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 1rem; display: flex; gap: 0.6rem; align-items: baseline; }
+h2 .n { font-family: var(--f-mono); font-size: 0.95rem; color: var(--accent); font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; margin: 2rem 0 0.5rem; }
+p { margin: 0 0 1rem; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+pre { font-family: var(--f-mono); font-size: 0.82rem; background: var(--code-bg); padding: 0.9rem 1rem; border-radius: 8px; overflow-x: auto; line-height: 1.45; margin: 0 0 1rem; }
+pre code { background: none; padding: 0; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+section { padding-block: 3rem 0.5rem; border-top: 1px solid var(--line); margin-top: 3rem; }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); gap: 2.5rem; align-items: center; }
+.hero .lede { font-size: 1.15rem; color: var(--muted); max-width: 34rem; }
+.stats { display: flex; flex-wrap: wrap; gap: 0.5rem 1.75rem; margin-top: 1.5rem; }
+.stats div { display: flex; flex-direction: column; }
+.stats b { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.stats span { font-size: 0.8rem; color: var(--muted); }
+.toc { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 2.5rem; padding: 0; list-style: none; }
+.toc a { display: inline-block; font-size: 0.85rem; text-decoration: none; color: var(--fg); border: 1px solid var(--line); padding: 0.25rem 0.65rem; border-radius: 999px; background: var(--surface); }
+.toc a:hover { border-color: var(--accent); color: var(--accent); }
+.toc a span { font-family: var(--f-mono); color: var(--accent); margin-right: 0.3rem; font-size: 0.78rem; }
+
+/* figures */
+figure { margin: 1.5rem 0 2rem; }
+figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 0.6rem; max-width: 44rem; }
+.scroll { overflow-x: auto; }
+.scroll > svg { min-width: 760px; }
+svg { display: block; max-width: 100%; height: auto; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; }
+.demo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.demo > * { min-width: 0; }
+.ctrl { display: flex; flex-direction: column; gap: 0.75rem; }
+.ctrl label { font-size: 0.9rem; display: flex; justify-content: space-between; gap: 1rem; }
+.ctrl label b { font-family: var(--f-mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.btns { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+button { font: inherit; font-size: 0.85rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.75rem; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.readout { font-family: var(--f-mono); font-size: 0.88rem; background: var(--code-bg); border-radius: 8px; padding: 0.6rem 0.8rem; font-variant-numeric: tabular-nums; }
+.readout b { color: var(--accent); }
+.note { font-size: 0.9rem; color: var(--muted); }
+
+/* boards */
+.bd-bg { fill: var(--board); }
+.bd-line { stroke: var(--board-line); stroke-width: 0.8; }
+.bd-out { fill: var(--bg); opacity: 0.75; }
+.st-own { fill: var(--stone-dark); }
+.st-opp { fill: var(--stone-light); stroke: var(--stone-edge); stroke-width: 1; }
+.mark { fill: none; stroke: var(--mark); stroke-width: 2.6; }
+.heat { fill: var(--accent); }
+.win { fill: none; stroke: var(--accent); stroke-width: 2.4; }
+.bbox { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.ax { font: 500 9.5px var(--f-mono); fill: var(--muted); }
+.cellnum { font: 600 9.5px var(--f-mono); fill: var(--fg); }
+.hit { fill: transparent; cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 0.35rem; }
+.legend i.own { background: var(--stone-dark); }
+.legend i.opp { background: var(--stone-light); border: 1px solid var(--stone-edge); }
+.legend i.mk { border-radius: 2px; border: 2px solid var(--mark); }
+.legend i.ac { border-radius: 2px; background: var(--accent); }
+
+/* diagrams */
+.dg { color: var(--fg); }
+.dg-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.dg-key { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+.dg-zone { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 5 5; }
+.dg-t { font: 600 13px var(--f-body); fill: var(--fg); }
+.dg-m { font: 600 12px var(--f-mono); fill: var(--fg); }
+.dg-s { font: 400 12px var(--f-body); fill: var(--muted); }
+.dg-l { font: 500 12px var(--f-body); fill: var(--muted); }
+.dg-lane { font: 700 11px var(--f-body); fill: var(--accent); letter-spacing: 0.08em; }
+.dg-a { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+.dg-a2 { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+.dg-faint { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; fill: none; }
+.dg-dot { fill: var(--muted); opacity: 0.45; }
+.dg-dot.v { fill: var(--accent); opacity: 1; }
+.plot-line { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+.plot-curve { fill: none; stroke: var(--fg); stroke-width: 1.6; }
+.plot-grid { stroke: var(--line); stroke-width: 1; }
+.plot-res { stroke: var(--mark); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.plot-pt { fill: var(--fg); }
+.plot-step { fill: var(--mark); }
+.plot-path { stroke: var(--mark); stroke-width: 1.4; fill: none; }
+
+/* tables */
+.tbl { overflow-x: auto; margin: 1rem 0 1.5rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+tr.total td { font-weight: 700; border-bottom: none; }
+
+/* param bar */
+.pbar { display: flex; height: 2.2rem; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); margin: 0.75rem 0 0.4rem; }
+.pbar div { display: flex; align-items: center; padding: 0 0.6rem; font-size: 0.8rem; white-space: nowrap; overflow: hidden; }
+.pbar .a { background: var(--accent); color: var(--surface); flex: 99.21; }
+.pbar .b { background: var(--board); color: var(--fg); flex: 0.55; min-width: 6px; }
+.pbar .c { background: var(--mark); flex: 0.24; min-width: 4px; }
+
+/* softmax */
+.sm { width: 100%; font-size: 0.88rem; }
+.sm td { padding: 0.45rem 0.4rem; vertical-align: middle; }
+.sm .bar { height: 0.9rem; background: var(--accent); border-radius: 3px; min-width: 1px; }
+.sm .gwrap { position: relative; height: 0.9rem; background: var(--code-bg); border-radius: 3px; }
+.sm .g { position: absolute; top: 0; height: 100%; border-radius: 3px; }
+.sm .g.neg { background: var(--accent); }
+.sm .g.pos { background: var(--mark); }
+.sm .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+
+/* comparisons / lists */
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; margin: 1rem 0 1.5rem; }
+.two > div { min-width: 0; }
+.two h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.two ul { margin: 0; padding-left: 1.1rem; }
+.two li { margin-bottom: 0.5rem; }
+.ok h3 { color: var(--accent); }
+.no h3 { color: var(--mark); }
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 0.75rem; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0.5rem; }
+.steps li::before { content: counter(s); font-family: var(--f-mono); font-weight: 600; color: var(--accent); }
+dl.gloss { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: 0.4rem 1.25rem; font-size: 0.92rem; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--muted); }
+.mathblock { overflow-x: auto; margin: 0.5rem 0 1.25rem; }
+math { font-size: 1.08em; }
+.kgrid { display: inline-grid; grid-template-columns: repeat(3, 2rem); gap: 2px; font-family: var(--f-mono); font-size: 0.85rem; }
+.kgrid span { text-align: center; padding: 0.25rem 0; background: var(--code-bg); border-radius: 3px; }
+.kgrid span.on { background: var(--accent); color: var(--surface); }
+
+@media (max-width: 760px) {
+  .hero, .demo, .two { grid-template-columns: minmax(0, 1fr); }
+  .hero > div:last-child { max-width: 22rem; }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dd { margin-bottom: 0.5rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="page">
+
+<header class="hero">
+  <div>
+    <h1>Gomoku Policy CNN</h1>
+    <p class="lede">Một mạng nơ-ron nhìn thế cờ và đoán nước đi tiếp theo trong 225 ô. Nó học bằng cách bắt chước hàng nghìn ván của các engine mạnh nhất ở giải Gomocup 2019. Trang này giải thích từng bước: dữ liệu đi đâu, mô hình tính gì, và vì sao nó học được.</p>
+    <div class="stats">
+      <div><b>9.246</b><span>ván cờ dùng được</span></div>
+      <div><b>321.774</b><span>cặp (bàn cờ, nước đi)</span></div>
+      <div><b>1.340.737</b><span>tham số</span></div>
+      <div><b>225</b><span>lớp = 225 ô</span></div>
+    </div>
+  </div>
+  <div>
+    <figure style="margin:0">
+      <div id="heroBoard"></div>
+      <div class="legend"><span><i class="own"></i>quân người sắp đi</span><span><i class="opp"></i>quân đối thủ</span><span><i class="mk"></i>nước engine đã đi</span></div>
+    </figure>
+  </div>
+</header>
+
+<ul class="toc" aria-label="Mục lục">
+  <li><a href="#lam-gi"><span>1</span>Đã làm gì</a></li>
+  <li><a href="#y-tuong"><span>2</span>Ý tưởng</a></li>
+  <li><a href="#du-lieu"><span>3</span>Luồng dữ liệu</a></li>
+  <li><a href="#tham-so"><span>4</span>Tham số là gì</a></li>
+  <li><a href="#cnn"><span>5</span>Mạng CNN</a></li>
+  <li><a href="#loss"><span>6</span>Softmax và loss</a></li>
+  <li><a href="#hoc"><span>7</span>Cách mô hình học</a></li>
+  <li><a href="#phu-tro"><span>8</span>Kỹ thuật phụ trợ</a></li>
+  <li><a href="#danh-gia"><span>9</span>Đánh giá</a></li>
+  <li><a href="#toi-uu"><span>10</span>Tối ưu tới đâu</a></li>
+  <li><a href="#sieu-tham-so"><span>11</span>Siêu tham số</a></li>
+  <li><a href="#tiep-theo"><span>12</span>Bước tiếp theo</a></li>
+</ul>
+
+<!-- 1 -->
+<section id="lam-gi">
+  <div class="col">
+    <h2><span class="n">1</span>Những gì đã làm</h2>
+    <ol class="steps">
+      <li><div>Tải <code>gomocup2019results.zip</code> (36 MB) từ gomocup.org và mở ra xem. Phát hiện quan trọng: <b>giải Freestyle chơi trên bàn 20×20</b>, không phải 15×15.</div></li>
+      <li><div>Thống kê: khoảng 89% số ván có toàn bộ quân nằm gọn trong một khung 15×15. Các nước khai cuộc do giải đặt sẵn được ghi với thời gian nghĩ là 0.</div></li>
+      <li><div>Viết <code>create_dataset.py</code>: biến mỗi ván thành nhiều cặp (bàn cờ trước nước đi, nước đi). Kết quả là 321.774 mẫu từ 9.246 ván.</div></li>
+      <li><div>Kiểm tra dữ liệu: không nhãn nào rơi vào ô đã có quân, số quân hai bên luôn hợp lệ.</div></li>
+      <li><div>Viết notebook <code>train_policy.ipynb</code> để train trên GPU Kaggle, rồi chạy thử trên CPU với 300 ván để chắc chắn nó chạy hết từ đầu đến cuối.</div></li>
+    </ol>
+    <p class="muted">Sau đó model được train trên GPU T4 của Kaggle trong khoảng 23 phút (20 epoch): top-1 trên val đạt khoảng 54,7%, top-5 khoảng 86%.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="y-tuong">
+  <div class="col">
+    <h2><span class="n">2</span>Ý tưởng: học bắt chước</h2>
+    <p>Ta có hàng nghìn ván do các engine như Embryo, Rapfi, Yixin đánh với nhau. Cho mô hình xem một thế cờ, bắt nó đoán nước engine đã chọn. Nếu đoán đủ giống, bản thân mô hình sẽ đánh khá hay. Cách này gọi là <b>học có giám sát</b>, cụ thể là <b>học bắt chước</b>; mô hình loại này gọi là <b>policy network</b> (mạng trả lời "nên đi đâu").</p>
+    <p>Bàn 15×15 có 225 ô, nên nước đi tiếp theo là một trong 225 lớp. Đây là bài toán phân loại giống phân loại ảnh chó/mèo, chỉ là có 225 loại. Ô ở hàng <code>row</code>, cột <code>col</code> có số thứ tự:</p>
+    <div class="mathblock">\[\text{index} = \text{row}\times 15 + \text{col},\qquad 0 \le \text{index} \le 224\]</div>
+    <p>Ví dụ: nước đánh dấu đỏ trên bàn cờ ở đầu trang nằm ở hàng 7, cột 9, nên nhãn của nó là <code>7 × 15 + 9 = 114</code>. AlphaGo (2016) cũng bắt đầu đúng như vậy: một policy network học từ 30 triệu thế cờ của người chơi giỏi.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="du-lieu">
+  <div class="col">
+    <h2><span class="n">3</span>Luồng dữ liệu</h2>
+    <p>Dữ liệu đi qua hai chặng. Trên máy bạn, <code>create_dataset.py</code> biến file ván cờ thành một file mảng số. Trên Kaggle, notebook đọc file đó và lặp vòng học hàng nghìn lần.</p>
+  </div>
+  <figure>
+    <div class="scroll">
+    <svg class="dg" viewBox="0 0 1080 335" role="img" aria-label="Sơ đồ luồng dữ liệu: zip, danh sách nước đi, bàn 15x15, file npz trên máy; rồi trên Kaggle: chia train/val, xoay lật, CNN, cross-entropy, vòng lặp cập nhật tham số, lưu checkpoint.">
+      <defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <text class="dg-lane" x="20" y="26">MÁY CỦA BẠN · create_dataset.py</text>
+      <rect class="dg-box" x="20" y="40" width="170" height="70" rx="8"/>
+      <text class="dg-m" x="105" y="70" text-anchor="middle" style="font-size:11px">gomocup2019results.zip</text>
+      <text class="dg-s" x="105" y="90" text-anchor="middle">10.224 ván Freestyle</text>
+      <rect class="dg-box" x="310" y="40" width="170" height="70" rx="8"/>
+      <text class="dg-t" x="395" y="70" text-anchor="middle">Danh sách nước đi</text>
+      <text class="dg-s" x="395" y="90" text-anchor="middle">(x, y, thời gian nghĩ)</text>
+      <rect class="dg-box" x="600" y="40" width="170" height="70" rx="8"/>
+      <text class="dg-t" x="685" y="70" text-anchor="middle">Ván trên bàn 15×15</text>
+      <text class="dg-s" x="685" y="90" text-anchor="middle">dời vào giữa, bỏ 978 ván</text>
+      <rect class="dg-key" x="890" y="40" width="170" height="70" rx="8"/>
+      <text class="dg-m" x="975" y="70" text-anchor="middle">gomoku_15x15.npz</text>
+      <text class="dg-s" x="975" y="90" text-anchor="middle">321.774 mẫu (X, y, game)</text>
+      <line class="dg-a" x1="190" y1="75" x2="308" y2="75" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="249" y="67" text-anchor="middle">đọc file .psq</text>
+      <line class="dg-a" x1="480" y1="75" x2="598" y2="75" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="539" y="67" text-anchor="middle">lọc theo khung</text>
+      <line class="dg-a" x1="770" y1="75" x2="888" y2="75" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="829" y="67" text-anchor="middle">phát lại từng nước</text>
+      <line class="dg-a" x1="975" y1="110" x2="975" y2="203" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="966" y="160" text-anchor="end">upload lên Kaggle</text>
+
+      <text class="dg-lane" x="20" y="190">KAGGLE GPU · train_policy.ipynb</text>
+      <rect class="dg-box" x="905" y="205" width="155" height="70" rx="8"/>
+      <text class="dg-t" x="982" y="235" text-anchor="middle">Chia train / val</text>
+      <text class="dg-s" x="982" y="255" text-anchor="middle">theo ván, 90% / 10%</text>
+      <rect class="dg-box" x="680" y="205" width="140" height="70" rx="8"/>
+      <text class="dg-t" x="750" y="235" text-anchor="middle">Xoay / lật</text>
+      <text class="dg-s" x="750" y="255" text-anchor="middle">1 trong 8 phép</text>
+      <rect class="dg-key" x="455" y="205" width="140" height="70" rx="8"/>
+      <text class="dg-t" x="525" y="235" text-anchor="middle">CNN (ResNet)</text>
+      <text class="dg-s" x="525" y="255" text-anchor="middle">225 xác suất</text>
+      <rect class="dg-box" x="230" y="205" width="140" height="70" rx="8"/>
+      <text class="dg-t" x="300" y="235" text-anchor="middle">Cross-entropy</text>
+      <text class="dg-s" x="300" y="255" text-anchor="middle">−log p(nước đúng)</text>
+      <rect class="dg-key" x="20" y="205" width="140" height="70" rx="8"/>
+      <text class="dg-m" x="90" y="235" text-anchor="middle" style="font-size:11px">gomoku_policy.pt</text>
+      <text class="dg-s" x="90" y="255" text-anchor="middle">bản val tốt nhất</text>
+      <line class="dg-a" x1="905" y1="240" x2="822" y2="240" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="862" y="232" text-anchor="middle">512 mẫu/bước</text>
+      <line class="dg-a" x1="680" y1="240" x2="597" y2="240" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="638" y="232" text-anchor="middle">bàn cờ</text>
+      <line class="dg-a" x1="455" y1="240" x2="372" y2="240" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="413" y="232" text-anchor="middle">so với nhãn</text>
+      <line class="dg-a" x1="230" y1="240" x2="162" y2="240" marker-end="url(#ah1)"/>
+      <text class="dg-l" x="196" y="232" text-anchor="middle">mỗi epoch</text>
+      <path class="dg-a2" d="M300 275 C300 318, 525 318, 525 279" marker-end="url(#ah1)" style="color:var(--accent)"/>
+      <text class="dg-l" x="412" y="328" text-anchor="middle" style="fill:var(--accent)">gradient → AdamW sửa 1,34 triệu tham số</text>
+    </svg>
+    </div>
+    <figcaption>Chặng trên chạy một lần trên máy bạn. Chặng dưới là vòng lặp: mỗi bước lấy 512 mẫu, mô hình đoán, so với nhãn, rồi sửa tham số theo hướng giảm sai số. Khoảng 11.300 bước như vậy là xong 20 epoch.</figcaption>
+  </figure>
+
+  <div class="col">
+    <h3>File ván cờ trông như thế nào</h3>
+    <pre><code>Piskvorky 20x20, 11:11, 0     ← bàn 20×20
+6,11,0                        ← nước 1: x=6, y=11, nghĩ 0 ms (khai cuộc của giải)
+6,10,0
+...                           (10 nước khai cuộc)
+8,10,22817                    ← nước 11: engine nghĩ 22,8 giây
+5,11,15459
+...
+YIXIN18.zip                   ← engine đi trước
+WHOSE19.zip                   ← engine đi sau</code></pre>
+    <p>Các nước có thời gian nghĩ là 0 do ban tổ chức đặt, không phải engine chọn. Chúng được đặt lên bàn nhưng không bao giờ dùng làm nhãn.</p>
+
+    <h3>Từ bàn 20×20 sang bàn 15×15</h3>
+    <p>Với mỗi ván, script tìm khung chữ nhật nhỏ nhất chứa mọi quân. Khung to hơn 15 ô theo chiều nào thì bỏ ván đó (978 ván). Nếu vừa thì dịch cả ván sao cho khung nằm giữa bàn 15×15. Phép dịch giữ nguyên hình dạng các thế cờ, mà luật Gomoku chỉ quan tâm hình dạng.</p>
+  </div>
+  <figure>
+    <div id="cropBoard" style="max-width:30rem"></div>
+    <div class="legend"><span><i class="ac"></i>bàn 15×15 mới</span><span>- - - khung chứa mọi quân</span><span>vùng nhạt: ngoài bàn 20×20 gốc</span></div>
+    <figcaption>Ván thật <code>Freestyle1/0_0_10_2.psq</code> (38 nước). Khung chứa quân rộng 9, cao 10 nên vừa. Ván này nằm sát mép trái bàn gốc, nên khung 15×15 khi căn giữa chìa ra ngoài bàn 20×20. Mô hình sẽ thấy mép bàn ở chỗ engine không thấy. Đây là chỗ đánh đổi của việc chuyển kích thước bàn.</figcaption>
+  </figure>
+
+  <div class="col">
+    <h3>Bàn cờ được mã hoá thành số ra sao</h3>
+    <p>Mỗi bàn cờ là 2 tấm 15×15 chỉ chứa 0 và 1. Tấm 0 đánh dấu quân <b>của người sắp đi</b>, tấm 1 đánh dấu quân <b>đối thủ</b>. Nhờ vậy mô hình luôn trả lời một câu hỏi duy nhất: "<b>tôi</b> nên đi đâu?", không cần biết mình là đen hay trắng.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Mảng</th><th>Shape</th><th>Ý nghĩa</th></tr></thead>
+      <tbody>
+        <tr><td><code>X</code></td><td><code>(321774, 2, 15, 15)</code></td><td>321.774 bàn cờ, mỗi bàn 2 tấm 15×15</td></tr>
+        <tr><td><code>y</code></td><td><code>(321774,)</code></td><td>nước đi đúng, từ 0 đến 224</td></tr>
+        <tr><td><code>game</code></td><td><code>(321774,)</code></td><td>mẫu thuộc ván nào, dùng để chia train/val</td></tr>
+      </tbody>
+    </table></div>
+    <p>Chưa nén, dữ liệu nặng khoảng 145 MB. Nén lại còn 2,6 MB vì bàn cờ hầu hết là số 0.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="tham-so">
+  <div class="col">
+    <h2><span class="n">4</span>"Tham số" là gì?</h2>
+    <p>Đây là khái niệm quan trọng nhất, nên bắt đầu bằng ví dụ nhỏ nhất có thể. Ta muốn đoán giá nhà <span>\(y\)</span> từ diện tích <span>\(x\)</span> bằng một đường thẳng:</p>
+    <div class="mathblock">\[y = a\cdot x + b\]</div>
+    <p><span>\(x\)</span> là đầu vào, <span>\(y\)</span> là đầu ra cần đoán. <span>\(a\)</span> và <span>\(b\)</span> là <b>tham số</b>: những con số máy tự tìm sao cho đường thẳng khớp dữ liệu nhất. Hãy thử chỉnh tay, rồi bấm "Để máy tự học" để xem máy tự tìm.</p>
+  </div>
+  <div class="panel demo">
+    <div><svg id="fitPlot" viewBox="0 0 560 330" role="img" aria-label="Biểu đồ giá nhà theo diện tích với đường thẳng y = a x + b"></svg></div>
+    <div class="ctrl">
+      <label for="fitA">Tham số a (độ dốc) <b id="fitAv"></b></label>
+      <input type="range" id="fitA" min="0" max="6" step="0.01" value="1.2">
+      <label for="fitB">Tham số b (điểm cắt) <b id="fitBv"></b></label>
+      <input type="range" id="fitB" min="-2" max="3" step="0.01" value="1.8">
+      <div class="readout">Sai số trung bình bình phương (loss): <b id="fitLoss"></b><br><span id="fitStep">Bước học: 0</span></div>
+      <div class="btns"><button type="button" id="fitRun">Để máy tự học</button><button type="button" id="fitReset">Đặt lại</button></div>
+      <p class="note">Số liệu ở đây là ví dụ minh hoạ, không phải giá nhà thật. Các đường đứt đỏ là sai số của từng điểm. "Huấn luyện" nghĩa là chỉnh a, b từng chút để tổng sai số nhỏ dần.</p>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>Mạng nơ-ron là cùng ý tưởng đó, với 1,34 triệu tham số</h3>
+    <p>Mạng nơ-ron cũng là một hàm <span>\(f(x;\theta)\)</span>, chỉ là thay vì 2 tham số, <span>\(\theta\)</span> gồm <b>1.340.737 con số</b>. Toàn bộ "kiến thức" của mô hình nằm trong những con số đó, và file <code>gomoku_policy.pt</code> chính là nơi lưu chúng. Phần lớn nằm trong 8 khối ResBlock:</p>
+    <div class="pbar" role="img" aria-label="99,21% tham số nằm trong 8 ResBlock, 0,55% ở stem, 0,24% ở head"><div class="a">8 ResBlock · 99,21%</div><div class="b"></div><div class="c"></div></div>
+    <div class="legend"><span><i class="ac"></i>ResBlock 1.330.176</span><span><i style="background:var(--board)"></i>Stem 7.392</span><span><i style="background:var(--mark)"></i>Head 3.169</span></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Phần</th><th>Cách tính</th><th style="text-align:right">Số tham số</th></tr></thead>
+      <tbody>
+        <tr><td>Stem conv 5×5, 3 → 96 kênh</td><td>3 × 96 × 5 × 5</td><td class="num">7.200</td></tr>
+        <tr><td>Stem BatchNorm</td><td>2 × 96 (γ, β)</td><td class="num">192</td></tr>
+        <tr><td>Một conv 3×3, 96 → 96</td><td>96 × 96 × 3 × 3</td><td class="num">82.944</td></tr>
+        <tr><td>Một ResBlock (2 conv + 2 BN)</td><td>2 × 82.944 + 2 × 192</td><td class="num">166.272</td></tr>
+        <tr><td>8 ResBlock</td><td>8 × 166.272</td><td class="num">1.330.176</td></tr>
+        <tr><td>Head conv 1×1 96 → 32, BN, conv 32 → 1</td><td>3.072 + 64 + 33</td><td class="num">3.169</td></tr>
+        <tr class="total"><td>Tổng</td><td></td><td class="num">1.340.737</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Tham số và siêu tham số</h3>
+    <div class="two">
+      <div class="panel"><h3>Tham số (parameter)</h3><ul><li>Máy tự học trong lúc train</li><li>1,34 triệu con số</li><li>Ví dụ: các số trong bộ lọc tích chập</li><li>Thay đổi liên tục khi train</li></ul></div>
+      <div class="panel"><h3>Siêu tham số (hyperparameter)</h3><ul><li>Con người chọn trước khi train</li><li>Khoảng 10 con số</li><li>Ví dụ: số epoch, learning rate, số kênh, số block</li><li>Chỉ đổi khi bạn sửa code</li></ul></div>
+    </div>
+    <p>Trong ví dụ đường thẳng: a, b là tham số; còn "chỉnh bao nhiêu lần" và "mỗi lần chỉnh mạnh cỡ nào" là siêu tham số. Bảng đầy đủ ở <a href="#sieu-tham-so">mục 11</a>.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="cnn">
+  <div class="col">
+    <h2><span class="n">5</span>Mạng nơ-ron tích chập (CNN)</h2>
+    <h3>Phép tích chập</h3>
+    <p>Một <b>bộ lọc</b> 3×3 là 9 con số (9 tham số). Nó trượt qua từng ô của bàn cờ; tại mỗi ô, nó nhân 9 số của mình với 9 ô bên dưới rồi cộng lại. Kết quả trượt khắp bàn là một <b>bản đồ đặc trưng</b> cho biết mẫu hình đó xuất hiện ở đâu.</p>
+    <div class="mathblock">\[\text{out}[r,c] = \sum_{k}\sum_{i=-1}^{1}\sum_{j=-1}^{1} w[k,i,j]\cdot x[k,\,r+i,\,c+j]\]</div>
+    <p>Bấm vào bàn bên trái để đặt hoặc bỏ quân, rê chuột lên bàn bên phải để xem cửa sổ 3×3 tương ứng.</p>
+  </div>
+  <div class="panel">
+    <div class="btns" id="convKernels" style="margin-bottom:1rem"></div>
+    <div class="demo" style="grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)">
+      <div><div class="eyebrow" style="margin-bottom:0.4rem">Đầu vào (bấm để đặt quân)</div><div id="convIn"></div></div>
+      <div style="align-self:center;text-align:center"><div class="eyebrow" style="margin-bottom:0.4rem">Bộ lọc</div><div class="kgrid" id="convK"></div></div>
+      <div><div class="eyebrow" style="margin-bottom:0.4rem">Bản đồ đặc trưng</div><div id="convOut"></div></div>
+    </div>
+    <div class="readout" id="convRead" style="margin-top:1rem"></div>
+  </div>
+  <div class="col">
+    <p style="margin-top:1.5rem">Trong mô hình thật, <b>không ai thiết kế các bộ lọc</b>. Ban đầu chúng là số ngẫu nhiên, và qua training máy tự tìm ra những bộ lọc hữu ích, ví dụ nhận ra "ba mở", "bốn", hay hai đường giao nhau.</p>
+    <h3>Vì sao CNN hợp với cờ</h3>
+    <ul>
+      <li><b>Cục bộ:</b> thế cờ quan trọng (ba, bốn, chặn) nằm trong vùng nhỏ, đúng cỡ bộ lọc nhìn.</li>
+      <li><b>Dùng chung bộ lọc khắp bàn:</b> "bốn mở" ở góc hay ở giữa đều nguy hiểm như nhau, nên học một lần là dùng được mọi nơi.</li>
+      <li><b>Ít tham số:</b> nối thẳng 225 ô sang 225 ô tốn 50.625 tham số; bộ lọc 3×3 chỉ cần 9.</li>
+    </ul>
+
+    <h3>Xếp chồng lớp: nhìn ngày càng xa</h3>
+    <p>Lớp đầu (bộ lọc 5×5) nhìn bán kính 2 ô. Mỗi lớp 3×3 sau đó nhìn thêm 1 ô mỗi phía. Kéo thanh trượt để xem vùng mà một ô "thấy được" sau từng lớp; bấm vào bàn để đổi ô.</p>
+  </div>
+  <div class="panel demo">
+    <div id="rfBoard"></div>
+    <div class="ctrl">
+      <label for="rfL">Số lớp tích chập đã đi qua <b id="rfLv"></b></label>
+      <input type="range" id="rfL" min="1" max="17" step="1" value="4">
+      <div class="readout" id="rfRead"></div>
+      <p class="note">Mô hình có 1 lớp 5×5 và 16 lớp 3×3, nên ô cuối cùng nhìn được bán kính 2 + 16 = 18 ô, phủ trọn bàn từ bất kỳ vị trí nào. Lớp nông nhận ra mẫu đơn giản; lớp sâu ghép chúng thành khái niệm phức tạp như "đi đây thì tạo được hai đường ba cùng lúc".</p>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>Kiến trúc cụ thể</h3>
+  </div>
+  <figure>
+    <div class="scroll">
+    <svg class="dg" viewBox="0 0 1000 345" role="img" aria-label="Kiến trúc mạng: bàn cờ 2x15x15, thêm kênh toàn 1, stem conv 5x5 ra 96 kênh, 8 ResBlock, head conv 1x1, 225 logit, che ô có quân, softmax. Một ResBlock gồm conv, BN, ReLU, conv, BN, cộng với đường tắt x, rồi ReLU.">
+      <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <rect class="dg-box" x="10" y="40" width="130" height="70" rx="8"/>
+      <text class="dg-t" x="75" y="70" text-anchor="middle">Bàn cờ</text>
+      <text class="dg-m" x="75" y="90" text-anchor="middle">2 × 15 × 15</text>
+      <rect class="dg-box" x="180" y="40" width="130" height="70" rx="8"/>
+      <text class="dg-t" x="245" y="70" text-anchor="middle">+ kênh toàn 1</text>
+      <text class="dg-m" x="245" y="90" text-anchor="middle">3 × 15 × 15</text>
+      <rect class="dg-box" x="350" y="40" width="140" height="70" rx="8"/>
+      <text class="dg-t" x="420" y="70" text-anchor="middle">Stem: conv 5×5</text>
+      <text class="dg-m" x="420" y="90" text-anchor="middle">96 × 15 × 15</text>
+      <rect class="dg-key" x="530" y="40" width="150" height="70" rx="8"/>
+      <text class="dg-t" x="605" y="70" text-anchor="middle">ResBlock × 8</text>
+      <text class="dg-m" x="605" y="90" text-anchor="middle">96 × 15 × 15</text>
+      <rect class="dg-box" x="720" y="40" width="120" height="70" rx="8"/>
+      <text class="dg-t" x="780" y="70" text-anchor="middle">Head: conv 1×1</text>
+      <text class="dg-m" x="780" y="90" text-anchor="middle">1 × 15 × 15</text>
+      <rect class="dg-box" x="875" y="40" width="115" height="70" rx="8"/>
+      <text class="dg-t" x="932" y="64" text-anchor="middle">225 logit</text>
+      <text class="dg-s" x="932" y="82" text-anchor="middle">che ô có quân</text>
+      <text class="dg-s" x="932" y="98" text-anchor="middle">→ softmax</text>
+      <line class="dg-a" x1="140" y1="75" x2="178" y2="75" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="310" y1="75" x2="348" y2="75" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="490" y1="75" x2="528" y2="75" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="680" y1="75" x2="718" y2="75" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="840" y1="75" x2="873" y2="75" marker-end="url(#ah2)"/>
+      <text class="dg-l" x="605" y="28" text-anchor="middle">kích thước 15×15 giữ nguyên suốt mạng</text>
+
+      <line class="dg-faint" x1="530" y1="110" x2="160" y2="190"/>
+      <line class="dg-faint" x1="680" y1="110" x2="985" y2="190"/>
+      <rect class="dg-zone" x="160" y="190" width="825" height="140" rx="10"/>
+      <text class="dg-lane" x="175" y="210">BÊN TRONG MỘT RESBLOCK</text>
+      <circle class="dg-box" cx="195" cy="275" r="15"/>
+      <text class="dg-m" x="195" y="279" text-anchor="middle">x</text>
+      <rect class="dg-box" x="235" y="253" width="105" height="44" rx="6"/>
+      <text class="dg-t" x="287" y="279" text-anchor="middle">conv 3×3</text>
+      <rect class="dg-box" x="370" y="253" width="65" height="44" rx="6"/>
+      <text class="dg-t" x="402" y="279" text-anchor="middle">BN</text>
+      <rect class="dg-box" x="465" y="253" width="75" height="44" rx="6"/>
+      <text class="dg-t" x="502" y="279" text-anchor="middle">ReLU</text>
+      <rect class="dg-box" x="570" y="253" width="105" height="44" rx="6"/>
+      <text class="dg-t" x="622" y="279" text-anchor="middle">conv 3×3</text>
+      <rect class="dg-box" x="705" y="253" width="65" height="44" rx="6"/>
+      <text class="dg-t" x="737" y="279" text-anchor="middle">BN</text>
+      <circle class="dg-key" cx="825" cy="275" r="16"/>
+      <text class="dg-t" x="825" y="280" text-anchor="middle">+</text>
+      <rect class="dg-box" x="875" y="253" width="75" height="44" rx="6"/>
+      <text class="dg-t" x="912" y="279" text-anchor="middle">ReLU</text>
+      <line class="dg-a" x1="210" y1="275" x2="233" y2="275" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="340" y1="275" x2="368" y2="275" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="435" y1="275" x2="463" y2="275" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="540" y1="275" x2="568" y2="275" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="675" y1="275" x2="703" y2="275" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="770" y1="275" x2="807" y2="275" marker-end="url(#ah2)"/>
+      <line class="dg-a" x1="841" y1="275" x2="873" y2="275" marker-end="url(#ah2)"/>
+      <path class="dg-a2" d="M195 260 V228 H825 V257" marker-end="url(#ah2)" style="color:var(--accent)"/>
+      <text class="dg-l" x="510" y="222" text-anchor="middle" style="fill:var(--accent)">đường tắt: cộng thẳng x vào kết quả</text>
+      <text class="dg-l" x="502" y="318" text-anchor="middle">F(x): phần chỉnh sửa mà block học được</text>
+    </svg>
+    </div>
+    <figcaption>Hàng trên: đường đi của một bàn cờ qua mạng. Hàng dưới: phóng to một ResBlock. Đường tắt màu xanh cho phép block chỉ cần học phần chỉnh sửa F(x), và giúp tín hiệu học truyền qua nhiều lớp mà không bị mất.</figcaption>
+  </figure>
+
+  <div class="col">
+    <h3>Bốn chi tiết nhỏ trong kiến trúc</h3>
+    <p><b>Kênh toàn số 1.</b> Khi bộ lọc trượt ra ngoài mép, phần ngoài được điền 0. Nếu chỉ có 2 kênh quân cờ thì "ô trống" và "ngoài bàn" đều là 0. Thêm một kênh toàn 1 thì ngoài bàn là 0 còn trong bàn là 1, nên mạng nhận ra mép bàn.</p>
+    <p><b>Che ô đã có quân.</b> Gán điểm −10⁹ cho ô có quân, sau softmax xác suất ô đó gần như 0. Mạng không bao giờ đi vào ô đã có quân và không phải tốn công học luật này.</p>
+    <p><b>ReLU</b> là hàm <span>\(\max(0, z)\)</span>. Chồng 100 phép nhân-cộng vẫn chỉ tương đương một phép tuyến tính. ReLU "bẻ cong" hàm, cho phép mạng biểu diễn các quy tắc dạng "<i>nếu</i> có ba mở <i>và</i> đối thủ không có bốn <i>thì</i>...".</p>
+    <p><b>BatchNorm</b> chuẩn hoá giá trị mỗi kênh về trung bình 0, phương sai 1, rồi co giãn lại bằng 2 tham số học được <span>\(\gamma,\beta\)</span>:</p>
+    <div class="mathblock">\[\hat z = \frac{z-\mu_{\text{batch}}}{\sqrt{\sigma^2_{\text{batch}}+\epsilon}},\qquad \text{out} = \gamma\hat z + \beta\]</div>
+    <p>Giá trị không phình to hay teo nhỏ qua nhiều lớp, nên train nhanh và ổn định hơn.</p>
+    <p><b>Vì sao đường tắt quan trọng.</b> Mỗi ResBlock tính <span>\(\text{out} = \text{ReLU}(x + F(x))\)</span>. Khi lan truyền ngược, đạo hàm qua block có dạng</p>
+    <div class="mathblock">\[\frac{\partial\,\text{out}}{\partial x} \approx 1 + \frac{\partial F}{\partial x}\]</div>
+    <p>Số 1 là đường cao tốc cho tín hiệu học: nó không bị nhân với hàng loạt số nhỏ đến mức biến mất (vanishing gradient). Nhờ vậy mạng sâu vẫn train được. AlphaGo Zero dùng đúng loại block này.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="loss">
+  <div class="col">
+    <h2><span class="n">6</span>Softmax và cross-entropy</h2>
+    <p>Mạng cho ra 225 số thực bất kỳ gọi là <b>logit</b>. <b>Softmax</b> biến chúng thành xác suất dương, tổng bằng 1. <b>Cross-entropy</b> đo mô hình sai bao nhiêu: nó chỉ nhìn xác suất mô hình gán cho nước đúng.</p>
+    <div class="mathblock">\[p_k = \frac{e^{z_k}}{\sum_{j=1}^{225} e^{z_j}}\qquad\qquad \mathcal{L} = -\log p_y\]</div>
+    <p>Thử với 4 ô thay vì 225. Kéo các logit, chọn đâu là nước đúng, và xem loss cùng gradient thay đổi.</p>
+  </div>
+  <div class="panel">
+    <table class="sm" id="smTable">
+      <thead><tr><th>Ô</th><th>Nước đúng</th><th style="width:28%">Logit z</th><th>e<sup>z</sup></th><th style="width:22%">Xác suất p</th><th style="width:20%">Gradient p − 1[đúng]</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="readout" id="smRead" style="margin-top:1rem"></div>
+  </div>
+  <div class="col">
+    <p style="margin-top:1.5rem">Mốc cần nhớ: nếu mô hình đoán mò đều cả 225 ô, loss là <span>\(\ln 225 \approx 5{,}42\)</span>. Đó là mức loss lúc bắt đầu train, nên loss nào thấp hơn 5,42 nghĩa là mô hình đã học được gì đó.</p>
+
+    <h3>Vì sao chọn cross-entropy: ba lý do toán học</h3>
+    <p><b>1. Nó là ước lượng hợp lý cực đại.</b> Coi mô hình là phân phối <span>\(p_\theta(\text{nước đi}\mid\text{bàn cờ})\)</span>. Tìm tham số làm cho dữ liệu thật "có khả năng xảy ra" nhất, rồi lấy log và đổi dấu, ta được đúng tổng cross-entropy:</p>
+    <div class="mathblock">\[\arg\max_\theta \prod_i p_\theta(y_i\mid x_i) \;=\; \arg\min_\theta \sum_i -\log p_\theta(y_i\mid x_i)\]</div>
+    <p>Phương pháp này nhất quán: dữ liệu càng nhiều và mô hình đủ mạnh thì kết quả càng tiến về phân phối thật.</p>
+    <p><b>2. Loss nhỏ nhất đúng khi mô hình khớp hành vi của engine.</b> Gọi <span>\(q\)</span> là phân phối thật của "engine đi đâu":</p>
+    <div class="mathblock">\[\mathbb{E}[\mathcal L] = \underbrace{H(q)}_{\text{không đổi}} + \underbrace{D_{KL}(q\,\|\,p_\theta)}_{\ge 0,\ =0 \text{ khi } p_\theta=q}\]</div>
+    <p>Nếu ở một thế cờ engine đi ô A 70% số lần và ô B 30%, loss nhỏ nhất khi mô hình nói đúng "A: 0,7; B: 0,3", chứ không phải "A: 1". Mô hình không được thưởng nếu nói quá tự tin.</p>
+    <p><b>3. Đạo hàm rất gọn.</b></p>
+    <div class="mathblock">\[\frac{\partial\mathcal L}{\partial z_k} = p_k - \mathbb{1}[k=y]\]</div>
+    <p>Đó chính là cột gradient trong bảng trên: điểm của ô đúng bị đẩy lên, điểm các ô sai bị kéo xuống theo mức mô hình đã tin nhầm vào chúng. Khi mô hình sai nặng, gradient vẫn lớn nên nó học nhanh.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="hoc">
+  <div class="col">
+    <h2><span class="n">7</span>Mô hình học như thế nào</h2>
+    <h3>Gradient descent: đi xuống dốc</h3>
+    <p>Hình dung loss là độ cao của một vùng đồi núi, mỗi điểm là một bộ tham số. <b>Gradient</b> chỉ hướng dốc lên nhanh nhất; đi ngược hướng đó một bước dài <span>\(\eta\)</span> (learning rate):</p>
+    <div class="mathblock">\[\theta \leftarrow \theta - \eta\,\nabla_\theta\mathcal L\]</div>
+    <p>Bên dưới là phiên bản 1 tham số. Thử learning rate nhỏ (0,02), vừa (0,15) và lớn (0,6); thử xuất phát ở bên phải rồi bên trái.</p>
+  </div>
+  <div class="panel demo">
+    <div><svg id="gdPlot" viewBox="0 0 600 300" role="img" aria-label="Đường loss có hai thung lũng và các bước gradient descent"></svg></div>
+    <div class="ctrl">
+      <label for="gdLr">Learning rate η <b id="gdLrv"></b></label>
+      <input type="range" id="gdLr" min="0.01" max="0.7" step="0.01" value="0.15">
+      <label for="gdStart">Điểm xuất phát θ₀ <b id="gdStartv"></b></label>
+      <input type="range" id="gdStart" min="-3" max="3" step="0.1" value="2.8">
+      <div class="btns"><button type="button" id="gdStep">Đi 1 bước</button><button type="button" id="gdRun">Đi 20 bước</button><button type="button" id="gdReset">Đặt lại</button></div>
+      <div class="readout" id="gdRead"></div>
+      <p class="note">Đường này có hai thung lũng. Xuất phát bên phải thường dừng ở thung lũng nông (cực tiểu cục bộ). Đây là lý do gradient descent không đảm bảo tìm được điểm thấp nhất tuyệt đối.</p>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>Backpropagation: tính gradient cho 1,34 triệu tham số</h3>
+    <p>Mạng là chuỗi hàm lồng nhau. Theo quy tắc dây chuyền của đạo hàm, gradient của tham số ở lớp đầu là tích các đạo hàm qua từng lớp phía sau. Backpropagation tính chúng từ lớp cuối ngược về lớp đầu và dùng lại kết quả trung gian, nên chỉ tốn cỡ gấp đôi một lượt tính xuôi. PyTorch làm việc này khi gọi <code>loss.backward()</code>.</p>
+
+    <h3>Mini-batch: không cần xem hết dữ liệu mới đi một bước</h3>
+    <p>Mỗi bước chỉ dùng 512 mẫu ngẫu nhiên. Gradient của batch là ước lượng không chệch của gradient thật, độ nhiễu giảm theo <span>\(1/\sqrt{B}\)</span>, và một chút nhiễu còn giúp thoát khỏi những hố hẹp. Một lượt qua toàn bộ dữ liệu train (khoảng 566 bước) gọi là một <b>epoch</b>.</p>
+
+    <h3>AdamW: gradient descent thông minh hơn</h3>
+    <div class="mathblock">\[m_t = \beta_1 m_{t-1} + (1-\beta_1)g_t,\qquad v_t = \beta_2 v_{t-1} + (1-\beta_2)g_t^2,\qquad \theta \leftarrow \theta - \eta\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon} - \eta\lambda\theta\]</div>
+    <ul>
+      <li><span>\(m\)</span> là <b>quán tính</b>: như hòn bi lăn, giữ đà theo hướng nhất quán và triệt tiêu dao động.</li>
+      <li>Chia cho <span>\(\sqrt{v}\)</span>: tham số có gradient lớn thì bước nhỏ lại, gradient nhỏ thì bước to ra. Mỗi tham số có learning rate riêng.</li>
+      <li><span>\(-\eta\lambda\theta\)</span> là <b>weight decay</b> (<span>\(\lambda = 10^{-4}\)</span>): kéo nhẹ mọi tham số về 0 để mô hình khó học vẹt.</li>
+    </ul>
+
+    <h3>OneCycle: learning rate thay đổi theo thời gian</h3>
+  </div>
+  <figure>
+    <svg id="lrPlot" viewBox="0 0 700 240" role="img" aria-label="Learning rate tăng từ 0,00008 lên 0,002 trong 10% bước đầu rồi giảm theo đường cosin về gần 0" style="max-width:44rem"></svg>
+    <figcaption>Lịch learning rate thật của notebook (20 epoch, khoảng 11.320 bước). 10% đầu tăng dần vì tham số còn ngẫu nhiên và gradient còn lộn xộn. Sau đó giảm dần theo đường cosin để "đáp" chính xác vào đáy.</figcaption>
+  </figure>
+</section>
+
+<!-- 8 -->
+<section id="phu-tro">
+  <div class="col">
+    <h2><span class="n">8</span>Kỹ thuật phụ trợ</h2>
+    <h3>8 phép đối xứng của bàn cờ</h3>
+    <p>Luật Gomoku không đổi khi xoay bàn 90° hay lật gương. Nếu nước X là tốt, thì nước X xoay theo cũng tốt y như vậy trên bàn đã xoay. Mỗi batch chọn ngẫu nhiên 1 trong 8 phép và biến đổi <b>cả bàn cờ lẫn nhãn</b>. Dữ liệu hiệu dụng tăng gấp 8 lần mà không tốn thêm bộ nhớ. Bàn cờ dưới đây là mẫu thật trong dataset.</p>
+  </div>
+  <div class="panel demo">
+    <div id="symBoard"></div>
+    <div class="ctrl">
+      <div class="btns" id="symBtns"></div>
+      <div class="readout" id="symRead"></div>
+      <p class="note">Nhãn được ánh xạ bằng cách áp cùng phép biến đổi lên lưới số thứ tự 0..224 rồi tra ngược. Notebook có đoạn tự kiểm tra (<code>symmetry OK</code>) vì nếu nhãn lệch khỏi bàn cờ, mô hình vẫn train được nhưng học sai mà không ai nhận ra.</p>
+    </div>
+  </div>
+  <div class="col">
+    <h3>Mixed precision</h3>
+    <p>GPU T4 tính số 16-bit nhanh hơn nhiều lần so với 32-bit. Vấn đề là số 16-bit không biểu diễn được gradient quá nhỏ: chúng bị làm tròn thành 0. <b>GradScaler</b> nhân loss với một số lớn trước khi tính gradient, rồi chia lại trước khi cập nhật tham số. Nếu bị tràn số, bước đó được bỏ qua và hệ số được giảm đi.</p>
+    <h3>Để toàn bộ dữ liệu trên GPU</h3>
+    <p>Dữ liệu chỉ khoảng 145 MB, nhỏ so với 16 GB của T4. Đưa hết lên GPU một lần thì mỗi bước chỉ cần chọn chỉ mục, không phải chép dữ liệu qua lại.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="danh-gia">
+  <div class="col">
+    <h2><span class="n">9</span>Đánh giá: train, val, top-1, top-5</h2>
+    <p>Mục tiêu là đánh tốt ở thế cờ <b>mới</b>, không phải thuộc lòng thế cờ đã thấy. Vì vậy 10% số ván được giữ riêng làm tập <b>val</b>, không cho mô hình học, chỉ dùng để chấm điểm. Cách chia rất quan trọng:</p>
+  </div>
+  <figure>
+    <div class="scroll"><svg id="splitFig" class="dg" viewBox="0 0 760 230" role="img" aria-label="So sánh chia theo mẫu và chia theo ván"></svg></div>
+    <figcaption>Mỗi hàng là một ván, mỗi chấm là một nước đi. Bên trái, các nước val nằm xen giữa các nước train của cùng một ván, mà nước 20 và nước 21 có bàn cờ gần như giống hệt. Mô hình "đã thấy đề", điểm val cao giả tạo. Bên phải (cách notebook dùng), cả ván thuộc về val. Notebook còn bỏ thêm những thế cờ val trùng hẳn với train do dùng chung khai cuộc (khoảng 11% số mẫu).</figcaption>
+  </figure>
+  <div class="col">
+    <ul>
+      <li><b>Top-1:</b> tỉ lệ ô có xác suất cao nhất trùng đúng nước engine đã đi.</li>
+      <li><b>Top-5:</b> tỉ lệ nước của engine nằm trong 5 ô được đánh giá cao nhất.</li>
+      <li><b>Val loss:</b> cross-entropy trung bình trên val, xuất phát từ 5,42.</li>
+    </ul>
+    <p>Train loss giảm và val loss cũng giảm là đang học tốt. Train loss giảm nhưng val loss tăng là <b>overfitting</b> (học vẹt). Notebook luôn lưu bản có top-1 trên val tốt nhất. Kết quả thật sau 20 epoch: top-1 khoảng 54,7%, top-5 khoảng 86%, val loss khoảng 1,50 so với train loss 1,42, tức là không học vẹt. Đừng mong 100%, vì nhiều thế cờ có vài nước tốt ngang nhau và các engine chọn khác nhau.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="toi-uu">
+  <div class="col">
+    <h2><span class="n">10</span>Cái gì tối ưu, cái gì không</h2>
+    <div class="two">
+      <div class="panel ok"><h3>Có cơ sở toán học</h3><ul>
+        <li>Cross-entropy nhỏ nhất đúng khi mô hình khớp phân phối nước đi của engine.</li>
+        <li>Gradient luôn chỉ đúng hướng giảm loss tại điểm hiện tại, và backprop tính nó chính xác.</li>
+        <li>Đối xứng bàn cờ là sự thật của luật chơi, nên tăng cường dữ liệu theo nó không đưa sai lệch vào.</li>
+      </ul></div>
+      <div class="panel no"><h3>Không được đảm bảo</h3><ul>
+        <li>Loss không lồi: gradient descent tìm được một đáy tốt, không chắc là đáy thấp nhất.</li>
+        <li>Siêu tham số là mặc định hợp lý theo kinh nghiệm, chưa được chứng minh là tốt nhất.</li>
+        <li>Bắt chước engine không phải chơi tối ưu: trần năng lực là engine trong dữ liệu, kể cả lỗi của chúng.</li>
+        <li>Mô hình chỉ "nhìn một lần rồi đi", không tính trước, nên có thể bỏ sót đòn chiến thuật.</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="sieu-tham-so">
+  <div class="col">
+    <h2><span class="n">11</span>Bảng siêu tham số</h2>
+    <p>Những con số bạn có thể chỉnh trong notebook. Mỗi lần chỉ đổi một thứ để biết thứ nào có tác dụng.</p>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>Siêu tham số</th><th>Giá trị</th><th>Ý nghĩa</th><th>Tăng lên thì</th><th>Giảm xuống thì</th></tr></thead>
+    <tbody>
+      <tr><td><code>EPOCHS</code></td><td class="num">20</td><td>Số lượt qua toàn bộ dữ liệu</td><td>Học kỹ hơn, lâu hơn; quá nhiều dễ học vẹt</td><td>Nhanh hơn, có thể chưa học xong</td></tr>
+      <tr><td><code>BS</code></td><td class="num">512</td><td>Số mẫu mỗi bước</td><td>Gradient ổn định hơn, ít bước hơn</td><td>Nhiễu hơn, nhiều bước hơn</td></tr>
+      <tr><td><code>max_lr</code></td><td class="num">0,002</td><td>Learning rate đỉnh</td><td>Học nhanh, dễ mất ổn định</td><td>Ổn định, chậm</td></tr>
+      <tr><td><code>weight_decay</code></td><td class="num">0,0001</td><td>Mức kéo tham số về 0</td><td>Chống học vẹt mạnh hơn</td><td>Dễ học vẹt hơn</td></tr>
+      <tr><td><code>pct_start</code></td><td class="num">0,1</td><td>Phần bước dùng để khởi động lr</td><td>Khởi động êm hơn</td><td>Vào lr cao sớm hơn</td></tr>
+      <tr><td><code>channels</code></td><td class="num">96</td><td>Số bộ lọc mỗi lớp (độ rộng)</td><td>Nhận ra nhiều mẫu hơn; tham số tăng theo bình phương</td><td>Nhỏ, nhanh, yếu hơn</td></tr>
+      <tr><td><code>blocks</code></td><td class="num">8</td><td>Số ResBlock (độ sâu)</td><td>Suy luận nhiều tầng hơn, chậm hơn</td><td>Nhanh, nông hơn</td></tr>
+      <tr><td>tỉ lệ val</td><td class="num">10%</td><td>Phần số ván để chấm điểm</td><td>Điểm tin cậy hơn, ít dữ liệu học</td><td>Ngược lại</td></tr>
+      <tr><td><code>DATA_NAME</code></td><td>tất cả nước</td><td>Dataset dùng để train</td><td colspan="2">Đổi sang <code>gomoku_15x15_winner.npz</code> để chỉ học nước của người thắng (161.604 mẫu)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="col">
+    <p>Gợi ý thứ tự thử: chạy mặc định và ghi lại top-1, top-5; thử dataset chỉ người thắng; thử mô hình lớn hơn (<code>channels=128, blocks=10</code>). Nếu val loss bắt đầu tăng trong khi train loss vẫn giảm, giảm <code>EPOCHS</code> hoặc tăng <code>weight_decay</code>.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="tiep-theo">
+  <div class="col">
+    <h2><span class="n">12</span>Bước tiếp theo</h2>
+    <p>Xếp từ dễ đến khó:</p>
+    <ol class="steps">
+      <li><div><b>Kiểm tra chiến thuật bắt buộc.</b> Có nước thắng ngay thì đi; đối thủ sắp thắng thì chặn. Rất dễ làm và vá được điểm yếu lớn nhất.</div></li>
+      <li><div><b>Value head.</b> Thêm đầu ra thứ hai dự đoán ai sẽ thắng từ thế cờ này; dữ liệu đã có kết quả ván.</div></li>
+      <li><div><b>Kết hợp tìm kiếm.</b> Policy chọn vài nước triển vọng, rồi tìm kiếm sâu (alpha-beta hoặc MCTS) trên những nước đó. Đây là cách AlphaGo ghép "trực giác" với "tính toán".</div></li>
+      <li><div><b>Tự đánh với chính mình</b> (reinforcement learning kiểu AlphaZero) để vượt trần năng lực của dữ liệu engine. Tốn GPU hơn hẳn.</div></li>
+    </ol>
+
+    <h3>Thuật ngữ</h3>
+    <dl class="gloss">
+      <dt>Tham số</dt><dd>Con số bên trong mô hình, máy tự học. Mô hình này có 1,34 triệu.</dd>
+      <dt>Siêu tham số</dt><dd>Con số người chọn trước khi train: epoch, learning rate, số kênh.</dd>
+      <dt>Mẫu, nhãn</dt><dd>Mẫu là cặp (bàn cờ, nước đúng); nhãn là nước đúng, số từ 0 đến 224.</dd>
+      <dt>Batch, epoch</dt><dd>Batch là 512 mẫu xử lý cùng lúc; epoch là một lượt qua toàn bộ dữ liệu train.</dd>
+      <dt>Logit</dt><dd>Điểm số thô mô hình cho mỗi ô, trước softmax.</dd>
+      <dt>Loss</dt><dd>Con số đo mô hình sai bao nhiêu; train là làm nó nhỏ đi.</dd>
+      <dt>Gradient</dt><dd>Hướng làm loss tăng nhanh nhất; đi ngược nó để giảm loss.</dd>
+      <dt>Learning rate</dt><dd>Độ dài mỗi bước cập nhật tham số.</dd>
+      <dt>Kênh</dt><dd>Một tấm 15×15 trong dữ liệu; mỗi bộ lọc tạo ra một kênh.</dd>
+      <dt>Overfitting</dt><dd>Học vẹt: đúng trên dữ liệu train, kém trên dữ liệu mới.</dd>
+      <dt>Checkpoint</dt><dd>File lưu bộ tham số, ở đây là <code>gomoku_policy.pt</code>.</dd>
+    </dl>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function () {
+  const N = 15;
+  const SAMPLE = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,1,0,0,-1,0,0,0,0,0],[0,0,0,0,0,0,-1,-1,1,0,0,0,0,0,0],[0,0,0,0,0,0,1,-1,-1,0,0,0,0,0,0],[0,0,0,0,0,1,-1,0,1,0,0,0,0,0,0],[0,0,0,0,1,-1,1,1,0,-1,0,0,0,0,0],[0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]];
+  const SAMPLE_Y = 114;
+  const GAME = [[5,10,0],[5,9,0],[6,9,0],[5,7,0],[5,8,0],[5,11,0],[8,7,0],[7,8,0],[8,11,0],[7,10,0],[7,9,22817],[4,10,15459],[6,12,44895],[6,8,27896],[7,7,14740],[4,11,16504],[6,11,4],[4,9,22240],[4,8,24505],[2,9,17818],[3,11,5490],[2,8,6005],[6,13,707],[6,10,21],[3,9,6],[2,10,348],[2,11,6],[4,7,52],[6,14,4],[6,15,20],[1,7,6],[1,10,20],[5,6,5],[3,10,21],[0,10,5],[1,8,36],[0,7,4],[5,12,20]];
+  const $ = id => document.getElementById(id);
+  const vi = (v, d) => v.toLocaleString('vi-VN', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  function boardSVG(o) {
+    const rows = o.rows || N, cols = o.cols || N, s = o.cell || 22, m = o.axes ? 16 : 2;
+    const W = cols * s + m + 2, H = rows * s + m + 2;
+    const X = c => m + c * s, Y = r => m + r * s;
+    let h = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.label || 'Bàn cờ'}">`;
+    h += `<rect class="bd-bg" x="${m}" y="${m}" width="${cols * s}" height="${rows * s}"/>`;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (o.shade && o.shade(r, c)) h += `<rect class="bd-out" x="${X(c)}" y="${Y(r)}" width="${s}" height="${s}"/>`;
+      if (o.heat) { const v = o.heat(r, c); if (v > 0) h += `<rect class="heat" x="${X(c)}" y="${Y(r)}" width="${s}" height="${s}" opacity="${Math.min(1, v).toFixed(3)}"/>`; }
+    }
+    for (let i = 0; i <= cols; i++) h += `<line class="bd-line" x1="${X(i)}" y1="${m}" x2="${X(i)}" y2="${m + rows * s}"/>`;
+    for (let i = 0; i <= rows; i++) h += `<line class="bd-line" x1="${m}" y1="${Y(i)}" x2="${m + cols * s}" y2="${Y(i)}"/>`;
+    if (o.axes) {
+      for (let c = 0; c < cols; c++) h += `<text class="ax" x="${X(c) + s / 2}" y="${m - 4}" text-anchor="middle">${c}</text>`;
+      for (let r = 0; r < rows; r++) h += `<text class="ax" x="${m - 3}" y="${Y(r) + s / 2 + 3}" text-anchor="end">${r}</text>`;
+    }
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const v = o.get ? o.get(r, c) : 0;
+      if (v) h += `<circle class="${v > 0 ? 'st-own' : 'st-opp'}" cx="${X(c) + s / 2}" cy="${Y(r) + s / 2}" r="${s * 0.4}"/>`;
+      if (o.text) { const t = o.text(r, c); if (t !== '') h += `<text class="cellnum" x="${X(c) + s / 2}" y="${Y(r) + s / 2 + 3.5}" text-anchor="middle">${t}</text>`; }
+    }
+    (o.boxes || []).forEach(b => {
+      h += `<rect class="${b.cls}" x="${X(b.c0) + 1}" y="${Y(b.r0) + 1}" width="${(b.c1 - b.c0 + 1) * s - 2}" height="${(b.r1 - b.r0 + 1) * s - 2}"/>`;
+    });
+    if (o.mark) h += `<rect class="mark" x="${X(o.mark[1]) + 1.5}" y="${Y(o.mark[0]) + 1.5}" width="${s - 3}" height="${s - 3}"/>`;
+    if (o.hit) for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) h += `<rect class="hit" data-r="${r}" data-c="${c}" x="${X(c)}" y="${Y(r)}" width="${s}" height="${s}"/>`;
+    return h + '</svg>';
+  }
+
+  // hero
+  $('heroBoard').innerHTML = boardSVG({ get: (r, c) => SAMPLE[r][c], mark: [Math.floor(SAMPLE_Y / N), SAMPLE_Y % N], axes: true, label: 'Thế cờ thật trong dataset, nước engine đã đi ở hàng 7 cột 9' });
+
+  // 20x20 -> 15x15 crop
+  (function () {
+    const extra = 3, cols = 20 + extra, rows = 20;
+    const at = {};
+    GAME.forEach((mv, i) => { at[(mv[1]) + ',' + (mv[0] + extra)] = i % 2 === 0 ? 1 : -1; });
+    $('cropBoard').innerHTML = boardSVG({
+      rows, cols, cell: 18, axes: false,
+      get: (r, c) => at[r + ',' + c] || 0,
+      shade: (r, c) => c < extra,
+      boxes: [{ cls: 'bbox', r0: 6, r1: 15, c0: 0 + extra, c1: 8 + extra }, { cls: 'win', r0: 4, r1: 18, c0: -3 + extra, c1: 11 + extra }],
+      label: 'Ván cờ thật trên bàn 20x20 với khung 15x15 được chọn'
+    });
+  })();
+
+  // line fit demo
+  (function () {
+    const xs = [0.32, 0.40, 0.45, 0.55, 0.60, 0.70, 0.78, 0.85, 0.95, 1.10];
+    const ys = [1.50, 1.62, 1.95, 2.08, 2.45, 2.55, 2.95, 3.05, 3.45, 3.90];
+    const A = $('fitA'), B = $('fitB'); let step = 0, timer = null;
+    const px = x => 50 + (x - 0.25) / (1.2 - 0.25) * 490, py = y => 290 - y / 4.5 * 270;
+    const loss = (a, b) => xs.reduce((s, x, i) => s + (a * x + b - ys[i]) ** 2, 0) / xs.length;
+    function draw() {
+      const a = +A.value, b = +B.value;
+      let h = '';
+      [0, 1, 2, 3, 4].forEach(v => { h += `<line class="plot-grid" x1="50" x2="540" y1="${py(v)}" y2="${py(v)}"/><text class="dg-l" x="42" y="${py(v) + 4}" text-anchor="end">${v}</text>`; });
+      [0.3, 0.5, 0.7, 0.9, 1.1].forEach(v => { h += `<text class="dg-l" x="${px(v)}" y="308" text-anchor="middle">${Math.round(v * 100)}</text>`; });
+      h += `<text class="dg-l" x="295" y="326" text-anchor="middle">Diện tích (m²)</text><text class="dg-l" x="12" y="14">Giá (tỷ đồng)</text>`;
+      xs.forEach((x, i) => { h += `<line class="plot-res" x1="${px(x)}" x2="${px(x)}" y1="${py(ys[i])}" y2="${py(Math.max(-0.3, Math.min(4.7, a * x + b)))}"/>`; });
+      const clampY = y => Math.max(-0.3, Math.min(4.7, y));
+      h += `<line class="plot-line" x1="${px(0.25)}" y1="${py(clampY(a * 0.25 + b))}" x2="${px(1.2)}" y2="${py(clampY(a * 1.2 + b))}"/>`;
+      xs.forEach((x, i) => { h += `<circle class="plot-pt" cx="${px(x)}" cy="${py(ys[i])}" r="4.5"/>`; });
+      $('fitPlot').innerHTML = h;
+      $('fitAv').textContent = vi(a, 2); $('fitBv').textContent = vi(b, 2);
+      $('fitLoss').textContent = vi(loss(a, b), 4);
+      $('fitStep').textContent = 'Bước học: ' + step;
+    }
+    function run() {
+      if (timer) return;
+      let n = 0;
+      timer = setInterval(() => {
+        let a = +A.value, b = +B.value, ga = 0, gb = 0;
+        xs.forEach((x, i) => { const e = a * x + b - ys[i]; ga += 2 * e * x / xs.length; gb += 2 * e / xs.length; });
+        a -= 0.5 * ga; b -= 0.5 * gb;
+        A.value = Math.max(0, Math.min(6, a)); B.value = Math.max(-2, Math.min(3, b));
+        step++; n++; draw();
+        if (n >= 150) { clearInterval(timer); timer = null; }
+      }, 30);
+    }
+    A.addEventListener('input', () => { step = 0; draw(); });
+    B.addEventListener('input', () => { step = 0; draw(); });
+    $('fitRun').addEventListener('click', run);
+    $('fitReset').addEventListener('click', () => { if (timer) { clearInterval(timer); timer = null; } A.value = 1.2; B.value = 1.8; step = 0; draw(); });
+    draw();
+  })();
+
+  // convolution demo
+  (function () {
+    const M = 9;
+    const inp = Array.from({ length: M }, () => Array(M).fill(0));
+    [[1, 1], [1, 2], [1, 3], [4, 5], [5, 6], [6, 7], [6, 1], [7, 1]].forEach(([r, c]) => inp[r][c] = 1);
+    const KS = {
+      'Ba quân ngang': [[0, 0, 0], [1, 1, 1], [0, 0, 0]],
+      'Ba quân dọc': [[0, 1, 0], [0, 1, 0], [0, 1, 0]],
+      'Ba quân chéo': [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+      'Đếm quân xung quanh': [[1, 1, 1], [1, 0, 1], [1, 1, 1]]
+    };
+    let kname = 'Ba quân ngang', hov = [1, 2];
+    const kb = $('convKernels');
+    Object.keys(KS).forEach(k => { const b = document.createElement('button'); b.type = 'button'; b.textContent = k; b.addEventListener('click', () => { kname = k; draw(); }); kb.appendChild(b); });
+    const conv = () => { const K = KS[kname]; return inp.map((row, r) => row.map((_, c) => { let s = 0; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const rr = r + i, cc = c + j; if (rr >= 0 && rr < M && cc >= 0 && cc < M) s += K[i + 1][j + 1] * inp[rr][cc]; } return s; })); };
+    function draw() {
+      const out = conv(), K = KS[kname];
+      const mx = Math.max(3, ...out.flat());
+      const win = { cls: 'win', r0: Math.max(0, hov[0] - 1), r1: Math.min(M - 1, hov[0] + 1), c0: Math.max(0, hov[1] - 1), c1: Math.min(M - 1, hov[1] + 1) };
+      $('convIn').innerHTML = boardSVG({ rows: M, cols: M, cell: 26, get: (r, c) => inp[r][c], boxes: [win], hit: true, label: 'Bàn cờ đầu vào 9x9' });
+      $('convOut').innerHTML = boardSVG({ rows: M, cols: M, cell: 26, heat: (r, c) => out[r][c] / mx, text: (r, c) => out[r][c] ? out[r][c] : '', mark: hov, hit: true, label: 'Bản đồ đặc trưng 9x9' });
+      $('convK').innerHTML = K.flat().map(v => `<span class="${v ? 'on' : ''}">${v}</span>`).join('');
+      [...kb.children].forEach(b => b.setAttribute('aria-pressed', b.textContent === kname));
+      let parts = [];
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const rr = hov[0] + i, cc = hov[1] + j; const x = (rr >= 0 && rr < M && cc >= 0 && cc < M) ? inp[rr][cc] : 0; if (K[i + 1][j + 1]) parts.push(`${K[i + 1][j + 1]}×${x}`); }
+      $('convRead').innerHTML = `Ô (hàng ${hov[0]}, cột ${hov[1]}): ${parts.join(' + ')} = <b>${out[hov[0]][hov[1]]}</b>. Ô càng đậm thì mẫu "${kname.toLowerCase()}" càng khớp ở đó.`;
+    }
+    $('convIn').addEventListener('click', e => { const t = e.target.closest('[data-r]'); if (!t) return; const r = +t.dataset.r, c = +t.dataset.c; inp[r][c] ^= 1; hov = [r, c]; draw(); });
+    const setHov = e => { const t = e.target.closest('[data-r]'); if (!t) return; const r = +t.dataset.r, c = +t.dataset.c; if (r !== hov[0] || c !== hov[1]) { hov = [r, c]; draw(); } };
+    $('convOut').addEventListener('mouseover', setHov);
+    $('convOut').addEventListener('click', setHov);
+    draw();
+  })();
+
+  // receptive field
+  (function () {
+    let ctr = [7, 7];
+    const L = $('rfL');
+    function draw() {
+      const l = +L.value, r = 2 + (l - 1), side = 2 * r + 1;
+      $('rfBoard').innerHTML = boardSVG({ heat: (a, b) => (Math.max(Math.abs(a - ctr[0]), Math.abs(b - ctr[1])) <= r ? 0.45 : 0), mark: ctr, hit: true, label: 'Vùng nhìn của một ô sau ' + l + ' lớp' });
+      $('rfLv').textContent = l;
+      const full = Math.max(ctr[0], N - 1 - ctr[0], ctr[1], N - 1 - ctr[1]) <= r;
+      $('rfRead').innerHTML = `Bán kính nhìn: <b>${r}</b> ô, tức vùng ${side}×${side}.<br>${full ? 'Ô này đã thấy toàn bộ bàn cờ.' : 'Ô này chưa thấy hết bàn cờ.'}`;
+    }
+    L.addEventListener('input', draw);
+    $('rfBoard').addEventListener('click', e => { const t = e.target.closest('[data-r]'); if (!t) return; ctr = [+t.dataset.r, +t.dataset.c]; draw(); });
+    draw();
+  })();
+
+  // softmax demo
+  (function () {
+    const names = ['A', 'B', 'C', 'D'], z = [2, 1, 0, -1]; let yTrue = 0;
+    const tb = document.querySelector('#smTable tbody');
+    names.forEach((n, k) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><b>${n}</b></td><td><input type="radio" name="smy" id="smy${k}" aria-label="Ô ${n} là nước đúng" ${k === 0 ? 'checked' : ''}></td>
+        <td><input type="range" id="smz${k}" min="-4" max="6" step="0.1" value="${z[k]}" aria-label="Logit của ô ${n}"><div class="muted" style="font-family:var(--f-mono);font-size:0.8rem" id="smzv${k}"></div></td>
+        <td style="font-family:var(--f-mono);font-size:0.82rem" id="sme${k}"></td>
+        <td><div class="bar" id="smp${k}"></div><div style="font-family:var(--f-mono);font-size:0.8rem" id="smpv${k}"></div></td>
+        <td><div class="gwrap"><div class="mid"></div><div class="g" id="smg${k}"></div></div><div style="font-family:var(--f-mono);font-size:0.8rem" id="smgv${k}"></div></td>`;
+      tb.appendChild(tr);
+      tr.querySelector('#smz' + k).addEventListener('input', e => { z[k] = +e.target.value; draw(); });
+      tr.querySelector('#smy' + k).addEventListener('change', () => { yTrue = k; draw(); });
+    });
+    function draw() {
+      const e = z.map(v => Math.exp(v)), S = e.reduce((a, b) => a + b, 0), p = e.map(v => v / S);
+      names.forEach((_, k) => {
+        $('smzv' + k).textContent = 'z = ' + vi(z[k], 1);
+        $('sme' + k).textContent = vi(e[k], 2);
+        $('smp' + k).style.width = (p[k] * 100).toFixed(1) + '%';
+        $('smpv' + k).textContent = vi(p[k], 3);
+        const g = p[k] - (k === yTrue ? 1 : 0), el = $('smg' + k);
+        el.className = 'g ' + (g < 0 ? 'neg' : 'pos');
+        el.style.left = g < 0 ? (50 + g * 50) + '%' : '50%';
+        el.style.width = Math.abs(g * 50) + '%';
+        $('smgv' + k).textContent = (g >= 0 ? '+' : '') + vi(g, 3);
+      });
+      const L = -Math.log(p[yTrue]);
+      $('smRead').innerHTML = `Tổng e<sup>z</sup> = ${vi(S, 2)}. Loss = −ln p(${names[yTrue]}) = −ln ${vi(p[yTrue], 3)} = <b>${vi(L, 3)}</b>. Gradient âm (xanh) nghĩa là cần tăng logit đó; dương (đỏ) là cần giảm.`;
+    }
+    draw();
+  })();
+
+  // gradient descent demo
+  (function () {
+    const f = t => 0.12 * t ** 4 - 0.9 * t * t + 0.35 * t + 2, df = t => 0.48 * t ** 3 - 1.8 * t + 0.35;
+    const px = t => 50 + (t + 3.3) / 6.6 * 530, py = v => 270 - (v + 1) / 8 * 250;
+    let path = [], timer = null;
+    const lr = $('gdLr'), st = $('gdStart');
+    const reset = () => { if (timer) { clearInterval(timer); timer = null; } path = [+st.value]; draw(); };
+    const step = () => { const t = path[path.length - 1]; if (Math.abs(t) > 3.3) return false; path.push(t - (+lr.value) * df(t)); return true; };
+    function draw() {
+      let h = '';
+      [0, 2, 4, 6].forEach(v => { h += `<line class="plot-grid" x1="50" x2="580" y1="${py(v)}" y2="${py(v)}"/><text class="dg-l" x="42" y="${py(v) + 4}" text-anchor="end">${v}</text>`; });
+      [-3, -2, -1, 0, 1, 2, 3].forEach(v => { h += `<text class="dg-l" x="${px(v)}" y="290" text-anchor="middle">${v}</text>`; });
+      h += `<text class="dg-l" x="580" y="275" text-anchor="end">θ</text><text class="dg-l" x="10" y="14">loss</text>`;
+      let pts = []; for (let i = 0; i <= 200; i++) { const t = -3.3 + 6.6 * i / 200; const v = f(t); if (v <= 7) pts.push(`${px(t).toFixed(1)},${py(v).toFixed(1)}`); }
+      h += `<polyline class="plot-curve" points="${pts.join(' ')}"/>`;
+      const vis = path.filter(t => Math.abs(t) <= 3.3);
+      if (vis.length > 1) h += `<polyline class="plot-path" points="${vis.map(t => `${px(t).toFixed(1)},${py(Math.min(7, f(t))).toFixed(1)}`).join(' ')}"/>`;
+      vis.forEach((t, i) => { h += `<circle class="plot-step" cx="${px(t)}" cy="${py(Math.min(7, f(t)))}" r="${i === vis.length - 1 ? 6 : 3.5}" opacity="${i === vis.length - 1 ? 1 : 0.55}"/>`; });
+      $('gdPlot').innerHTML = h;
+      $('gdLrv').textContent = vi(+lr.value, 2); $('gdStartv').textContent = vi(+st.value, 1);
+      const t = path[path.length - 1];
+      let msg;
+      if (Math.abs(t) > 3.3) msg = 'θ văng ra khỏi vùng nhìn: bước quá dài, learning rate quá lớn.';
+      else if (path.length > 1 && Math.abs(df(t)) < 0.02) msg = t > 0 ? 'Đã dừng ở thung lũng bên phải (cực tiểu cục bộ, không phải thấp nhất).' : 'Đã dừng ở thung lũng bên trái (thấp nhất).';
+      else msg = path.length === 1 ? 'Chưa đi bước nào.' : 'Đang đi xuống.';
+      $('gdRead').innerHTML = `Bước ${path.length - 1}: θ = <b>${vi(t, 3)}</b>, loss = <b>${Math.abs(t) > 3.3 ? '—' : vi(f(t), 3)}</b><br>${msg}`;
+    }
+    lr.addEventListener('input', reset); st.addEventListener('input', reset);
+    $('gdStep').addEventListener('click', () => { step(); draw(); });
+    $('gdRun').addEventListener('click', () => { if (timer) return; let n = 0; timer = setInterval(() => { const ok = step(); draw(); if (!ok || ++n >= 20) { clearInterval(timer); timer = null; } }, 120); });
+    $('gdReset').addEventListener('click', reset);
+    reset();
+  })();
+
+  // OneCycle lr curve
+  (function () {
+    const total = 11320, up = Math.round(0.1 * total), max = 2e-3, init = max / 25, fin = init / 1e4;
+    const cos = (a, b, t) => b + (a - b) / 2 * (1 + Math.cos(Math.PI * t));
+    const lr = i => i <= up ? cos(init, max, i / up) : cos(max, fin, (i - up) / (total - up));
+    const px = i => 70 + i / total * 600, py = v => 200 - v / 2.2e-3 * 180;
+    let h = '';
+    [0, 0.5e-3, 1e-3, 1.5e-3, 2e-3].forEach(v => { h += `<line class="plot-grid" x1="70" x2="670" y1="${py(v)}" y2="${py(v)}"/><text class="dg-l" x="62" y="${py(v) + 4}" text-anchor="end">${vi(v, v ? 4 : 0)}</text>`; });
+    [0, 2830, 5660, 8490, 11320].forEach(i => { h += `<text class="dg-l" x="${px(i)}" y="220" text-anchor="middle">${i.toLocaleString('vi-VN')}</text>`; });
+    h += `<text class="dg-l" x="670" y="236" text-anchor="end">bước</text><text class="dg-l" x="70" y="12">learning rate</text>`;
+    let pts = []; for (let i = 0; i <= total; i += 40) pts.push(`${px(i).toFixed(1)},${py(lr(i)).toFixed(1)}`);
+    h += `<line class="dg-faint" x1="${px(up)}" x2="${px(up)}" y1="20" y2="200"/><text class="dg-l" x="${px(up) + 6}" y="30">10%: đỉnh 0,002</text>`;
+    h += `<polyline class="plot-line" points="${pts.join(' ')}"/>`;
+    $('lrPlot').innerHTML = h;
+  })();
+
+  // symmetry demo
+  (function () {
+    const names = ['Gốc', 'Xoay 90°', 'Xoay 180°', 'Xoay 270°', 'Lật gương', 'Xoay 90° + lật', 'Xoay 180° + lật', 'Xoay 270° + lật'];
+    const rot = a => a.map((row, i) => row.map((_, j) => a[j][N - 1 - i]));
+    const sym = (a, k) => { for (let i = 0; i < k % 4; i++) a = rot(a); return k >= 4 ? a.map(r => r.slice().reverse()) : a; };
+    const grid = Array.from({ length: N }, (_, r) => Array.from({ length: N }, (_, c) => r * N + c));
+    let k = 0;
+    const box = $('symBtns');
+    names.forEach((n, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = n; b.addEventListener('click', () => { k = i; draw(); }); box.appendChild(b); });
+    function draw() {
+      const bd = sym(SAMPLE, k), g = sym(grid, k);
+      let nr = 0, nc = 0;
+      g.forEach((row, r) => row.forEach((v, c) => { if (v === SAMPLE_Y) { nr = r; nc = c; } }));
+      $('symBoard').innerHTML = boardSVG({ get: (r, c) => bd[r][c], mark: [nr, nc], axes: true, label: 'Thế cờ sau phép ' + names[k] });
+      [...box.children].forEach((b, i) => b.setAttribute('aria-pressed', i === k));
+      $('symRead').innerHTML = `Phép: <b>${names[k]}</b><br>Nhãn gốc: hàng 7, cột 9 → 114<br>Nhãn mới: hàng ${nr}, cột ${nc} → ${nr} × 15 + ${nc} = <b>${nr * N + nc}</b>`;
+    }
+    draw();
+  })();
+
+  // train/val split figure
+  (function () {
+    const rowsN = 6, dots = 12, valGames = [1, 4];
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let h = '';
+    [[20, 'Chia ngẫu nhiên theo mẫu (sai)', false], [400, 'Chia theo ván (notebook dùng)', true]].forEach(([x0, title, byGame]) => {
+      h += `<text class="dg-t" x="${x0}" y="20">${title}</text>`;
+      for (let r = 0; r < rowsN; r++) {
+        const y = 48 + r * 28;
+        h += `<text class="dg-l" x="${x0}" y="${y + 4}">Ván ${r + 1}</text>`;
+        for (let d = 0; d < dots; d++) {
+          const isVal = byGame ? valGames.includes(r) : rnd() < 0.17;
+          h += `<circle class="dg-dot${isVal ? ' v' : ''}" cx="${x0 + 60 + d * 24}" cy="${y}" r="7"/>`;
+        }
+      }
+    });
+    h += `<circle class="dg-dot" cx="30" cy="218" r="6"/><text class="dg-l" x="42" y="222">train</text><circle class="dg-dot v" cx="100" cy="218" r="6"/><text class="dg-l" x="112" y="222">val</text>`;
+    $('splitFig').innerHTML = h;
+  })();
+
+  // math
+  function renderMath() {
+    if (!window.renderMathInElement) return;
+    try {
+      renderMathInElement(document.body, { delimiters: [{ left: '\\[', right: '\\]', display: true }, { left: '\\(', right: '\\)', display: false }], output: 'mathml', throwOnError: false });
+    } catch (e) { /* leave TeX source visible */ }
+  }
+  if (document.readyState === 'complete') renderMath(); else window.addEventListener('load', renderMath);
+})();
+</script>

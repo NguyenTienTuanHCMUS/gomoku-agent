@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gomoku Agent</title>
+<meta name="description" content="Đánh cờ caro 15×15 với một mạng nơ-ron học từ các ván của giải Gomocup 2019, chạy ngay trong trình duyệt.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: wood board on the left, a narrow control column on the right; stacks on phones. Same palette as the explainer page. */
+:root {
+  --bg: #f2f4f1; --surface: #ffffff; --fg: #1a1e1c; --muted: #5a625d; --line: #d5dad4;
+  --accent: #17705a; --accent-soft: #dcede6; --mark: #cc3a27;
+  --board: #e3c48c; --board-line: #7d6238; --stone-dark: #1b1b1b; --stone-light: #faf8f2; --stone-edge: #6f6148;
+  --code-bg: #e8ebe7;
+  --f-body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121514; --surface: #1a1e1c; --fg: #e4e8e5; --muted: #9aa39e; --line: #2e3531;
+    --accent: #58c4a4; --accent-soft: #1c3a31; --mark: #ff6a55;
+    --board: #b8955c; --board-line: #4f3d20; --stone-dark: #111; --stone-light: #f3f0e8; --stone-edge: #4d4332;
+    --code-bg: #232927; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.page { max-width: 72rem; margin: 0 auto; padding: 1.5rem max(16px, env(safe-area-inset-right, 0px)) 3rem max(16px, env(safe-area-inset-left, 0px)); }
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 0.5rem 2rem; margin-bottom: 1.25rem; }
+h1 { margin: 0; font-size: 1.9rem; letter-spacing: -0.02em; }
+header p { margin: 0.2rem 0 0; color: var(--muted); max-width: 40rem; }
+header nav { display: flex; gap: 1rem; font-size: 0.9rem; }
+a { color: var(--accent); }
+.game { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 1.75rem; align-items: start; }
+.board-wrap { max-width: 40rem; width: 100%; }
+#board { display: block; width: 100%; height: auto; touch-action: manipulation; border-radius: 10px; }
+#board .bg { fill: var(--board); }
+#board .ln { stroke: var(--board-line); stroke-width: 1; }
+#board .star { fill: var(--board-line); }
+#board .crd { font: 600 11px var(--f-mono); fill: var(--board-line); }
+#board .x { fill: var(--stone-dark); }
+#board .o { fill: var(--stone-light); stroke: var(--stone-edge); stroke-width: 1; }
+#board .last { fill: none; stroke: var(--mark); stroke-width: 2.5; }
+#board .win { fill: none; stroke: var(--mark); stroke-width: 3; }
+#board .ghost { opacity: 0.35; pointer-events: none; }
+#board .hint { fill: var(--accent); opacity: 0.85; }
+#board .hint-t { font: 700 12px var(--f-mono); fill: var(--surface); pointer-events: none; }
+#board .num { font: 600 10px var(--f-mono); pointer-events: none; }
+#board.busy { cursor: progress; }
+#board:not(.busy) { cursor: pointer; }
+aside { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+#status { font-size: 1.15rem; font-weight: 700; }
+#status.thinking { color: var(--accent); }
+.evalbar { height: 10px; border-radius: 99px; background: var(--code-bg); overflow: hidden; display: flex; }
+.evalbar div { background: var(--fg); transition: width 0.4s ease; }
+.evallbl { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+button { font: inherit; font-size: 0.88rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.7rem; cursor: pointer; }
+button:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--accent-soft); }
+button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.row button { flex: 1; }
+.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 600; }
+.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.note { font-size: 0.82rem; color: var(--muted); margin: 0; }
+#info { font-size: 0.86rem; margin: 0; min-height: 2.6em; }
+#moves { font-family: var(--f-mono); font-size: 0.8rem; color: var(--muted); max-height: 7.5rem; overflow-y: auto; margin: 0; word-spacing: 0.15em; }
+#send[hidden] { display: none; }
+.progress { height: 3px; background: var(--code-bg); border-radius: 2px; overflow: hidden; }
+.progress div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }
+footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 48rem; }
+@media (max-width: 860px) { .game { grid-template-columns: minmax(0, 1fr); } .board-wrap { max-width: none; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>Gomoku Agent</h1>
+      <p>Đánh cờ caro 15×15 (5 quân liền là thắng) với một mạng nơ-ron học từ các ván của giải Gomocup 2019. Model chạy ngay trong trình duyệt của bạn, không gửi gì lên máy chủ.</p>
+    </div>
+    <nav><a id="repoLink" href="https://github.com/NguyenTienTuanHCMUS/gomoku-agent">Mã nguồn</a><a href="explainer.html">Model hoạt động thế nào</a></nav>
+  </header>
+
+  <div class="game">
+    <div class="board-wrap"><svg id="board" viewBox="0 0 640 640" role="img" aria-label="Bàn cờ 15 x 15"></svg></div>
+
+    <aside>
+      <div class="card">
+        <div id="status">Đang tải model…</div>
+        <div class="progress" aria-hidden="true"><div id="prog"></div></div>
+        <div>
+          <div class="evalbar" aria-hidden="true"><div id="evalFill" style="width:50%"></div></div>
+          <div class="evallbl"><span id="evalModel">Model —</span><span id="evalHuman">Bạn —</span></div>
+        </div>
+        <p id="info" aria-live="polite"></p>
+      </div>
+
+      <div class="card">
+        <div class="label">Bạn cầm</div>
+        <div class="seg" id="sideSeg">
+          <button type="button" data-side="1" aria-pressed="true">X · đi trước</button>
+          <button type="button" data-side="2">O · đi sau</button>
+        </div>
+        <div class="label">Độ khó</div>
+        <div class="seg" id="levelSeg">
+          <button type="button" data-sims="0">Dễ</button>
+          <button type="button" data-sims="100" aria-pressed="true">Vừa</button>
+          <button type="button" data-sims="300">Khó</button>
+        </div>
+        <p class="note" id="levelNote"></p>
+        <div class="row">
+          <button type="button" id="newBtn" class="primary">Ván mới</button>
+          <button type="button" id="undoBtn">Đi lại</button>
+          <button type="button" id="hintBtn">Gợi ý</button>
+        </div>
+      </div>
+
+      <div class="card" id="send" hidden>
+        <div class="label">Giúp model học thêm</div>
+        <p class="note">Gửi ván này cho dự án để sau này model học từ nó, nhất là những ván bạn thắng. Nút sẽ mở trang tạo Issue trên GitHub với nội dung ván cờ điền sẵn; bạn xem lại rồi tự bấm <b>Submit</b>. Cần tài khoản GitHub, và ván sẽ hiển thị công khai dưới tên tài khoản của bạn.</p>
+        <button type="button" id="sendBtn" class="primary">Gửi ván này lên GitHub</button>
+      </div>
+
+      <div class="card">
+        <div class="label">Các nước đã đi</div>
+        <p id="moves">—</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    Model: mạng ResNet 1,34 triệu tham số, đoán đúng nước của engine Gomocup khoảng 55% số lần, kèm value head ước lượng ai đang thắng. Mức Vừa và Khó dùng tìm kiếm cây Monte Carlo (MCTS) giống AlphaZero, nhưng nhỏ hơn rất nhiều. Lần đầu mở trang sẽ tải khoảng 16 MB (model và thư viện ONNX Runtime).
+  </footer>
+</div>
+
+<script>
+(() => {
+  const N = 15, NN = 225, COLS = 'abcdefghijklmno';
+  const S = 640, M = 34, STEP = (S - 2 * M) / (N - 1);   // board geometry: 15 lines, margin for coordinates
+  const LEVELS = { 0: 'Dễ: không tìm kiếm, đi theo trực giác của mạng (kèm thắng ngay / chặn ngay).', 100: 'Vừa: thử thêm 100 nước đi trước mỗi lượt, khoảng 3 giây.', 300: 'Khó: thử thêm 300 nước đi trước mỗi lượt, khoảng 10 giây.' };
+  const $ = id => document.getElementById(id);
+  const svg = $('board');
+
+  const REPO = (() => {
+    const h = location.hostname;
+    if (h.endsWith('.github.io')) return `https://github.com/${h.split('.')[0]}/${location.pathname.split('/')[1] || 'gomoku-agent'}`;
+    return 'https://github.com/NguyenTienTuanHCMUS/gomoku-agent';
+  })();
+  $('repoLink').href = REPO;
+
+  let board = new Int8Array(NN), moves = [], human = 1, sims = 100, over = null, busy = false, ready = false;
+  let undos = 0, hint = null, hover = -1, lastEval = null;
+  let worker, nextId = 1, waiting = new Map();
+
+  // ---------------------------------------------------------------- worker
+  function startWorker() {
+    if (worker) worker.terminate();
+    waiting.forEach(w => w.reject(new Error('cancelled')));
+    waiting = new Map();
+    worker = new Worker('engine-worker.js');
+    worker.onmessage = e => {
+      const w = waiting.get(e.data.id);
+      if (!w) return;
+      if (e.data.progress !== undefined) { w.progress && w.progress(e.data.progress); return; }
+      waiting.delete(e.data.id);
+      e.data.error ? w.reject(new Error(e.data.error)) : w.resolve(e.data);
+    };
+    return ask({ type: 'init', model: new URL('model.onnx', location.href).href });
+  }
+  function ask(msg, progress) {
+    const id = nextId++;
+    return new Promise((resolve, reject) => { waiting.set(id, { resolve, reject, progress }); worker.postMessage({ ...msg, id }); });
+  }
+
+  // ---------------------------------------------------------------- helpers
+  const name = i => COLS[i % N] + (Math.floor(i / N) + 1);
+  const xy = i => [M + (i % N) * STEP, M + Math.floor(i / N) * STEP];
+  const pct = v => Math.round(v * 100) + '%';
+  const toMove = () => (moves.length % 2 === 0 ? 1 : 2);
+  function fiveLine(idx) {
+    const p = board[idx], r = Math.floor(idx / N), c = idx % N;
+    for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+      const line = [idx];
+      for (const s of [1, -1]) {
+        let rr = r + s * dr, cc = c + s * dc;
+        while (rr >= 0 && rr < N && cc >= 0 && cc < N && board[rr * N + cc] === p) { line.push(rr * N + cc); rr += s * dr; cc += s * dc; }
+      }
+      if (line.length >= 5) return line;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- drawing
+  function draw() {
+    let h = `<rect class="bg" x="0" y="0" width="${S}" height="${S}" rx="10"/>`;
+    for (let i = 0; i < N; i++) {
+      const p = M + i * STEP;
+      h += `<line class="ln" x1="${M}" y1="${p}" x2="${S - M}" y2="${p}"/><line class="ln" x1="${p}" y1="${M}" x2="${p}" y2="${S - M}"/>`;
+      h += `<text class="crd" x="${p}" y="${M - 14}" text-anchor="middle">${COLS[i]}</text>`;
+      h += `<text class="crd" x="${M - 14}" y="${p + 4}" text-anchor="middle">${i + 1}</text>`;
+    }
+    for (const i of [48, 56, 112, 168, 176]) { const [x, y] = xy(i); h += `<circle class="star" cx="${x}" cy="${y}" r="3.5"/>`; }
+    if (hint) hint.forEach(([i, p], k) => {
+      const [x, y] = xy(i);
+      h += `<circle class="hint" cx="${x}" cy="${y}" r="${STEP * 0.36}"/><text class="hint-t" x="${x}" y="${y + 4}" text-anchor="middle">${k + 1}</text>`;
+    });
+    moves.forEach((i, k) => {
+      const [x, y] = xy(i), cls = board[i] === 1 ? 'x' : 'o';
+      h += `<circle class="${cls}" cx="${x}" cy="${y}" r="${STEP * 0.44}"/>`;
+    });
+    if (moves.length) { const [x, y] = xy(moves[moves.length - 1]); h += `<circle class="last" cx="${x}" cy="${y}" r="${STEP * 0.2}"/>`; }
+    if (over && over.line) over.line.forEach(i => { const [x, y] = xy(i); h += `<circle class="win" cx="${x}" cy="${y}" r="${STEP * 0.5}"/>`; });
+    if (hover >= 0 && !board[hover] && canHumanMove()) {
+      const [x, y] = xy(hover);
+      h += `<circle class="${human === 1 ? 'x' : 'o'} ghost" cx="${x}" cy="${y}" r="${STEP * 0.44}"/>`;
+    }
+    svg.innerHTML = h;
+    svg.classList.toggle('busy', busy);
+    $('moves').textContent = moves.length ? moves.map((m, k) => `${k + 1}.${name(m)}`).join(' ') : '—';
+    $('undoBtn').disabled = busy || !moves.some((_, k) => (k % 2 === 0 ? 1 : 2) === human);
+    $('hintBtn').disabled = busy || !!over || !ready || toMove() !== human;
+    $('send').hidden = !over || moves.length < 6;
+    document.querySelectorAll('#sideSeg button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.side === human));
+    document.querySelectorAll('#levelSeg button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.sims === sims));
+    $('levelNote').textContent = LEVELS[sims];
+  }
+  function setEval(modelWin) {
+    lastEval = modelWin;
+    if (modelWin === null) { $('evalModel').textContent = 'Model —'; $('evalHuman').textContent = 'Bạn —'; $('evalFill').style.width = '50%'; return; }
+    $('evalFill').style.width = pct(modelWin);
+    $('evalModel').textContent = `Model ${pct(modelWin)}`;
+    $('evalHuman').textContent = `Bạn ${pct(1 - modelWin)}`;
+  }
+  function setStatus(text, thinking) { $('status').textContent = text; $('status').classList.toggle('thinking', !!thinking); }
+  function setProgress(f) { $('prog').style.width = (f * 100).toFixed(1) + '%'; }
+
+  // ---------------------------------------------------------------- game flow
+  const canHumanMove = () => ready && !busy && !over && toMove() === human;
+
+  function place(i) {
+    board[i] = toMove();
+    moves.push(i);
+    hint = null;
+    const line = fiveLine(i);
+    if (line) over = { winner: board[i], line };
+    else if (moves.length === NN) over = { winner: 0, line: null };
+  }
+
+  function announce() {
+    if (!over) { setStatus(toMove() === human ? `Lượt của bạn (${human === 1 ? 'X' : 'O'})` : 'Lượt của model'); return; }
+    if (over.winner === 0) setStatus('Hoà: bàn cờ đã đầy.');
+    else if (over.winner === human) setStatus(`Bạn thắng sau ${moves.length} nước!`);
+    else setStatus(`Model thắng sau ${moves.length} nước.`);
+  }
+
+  async function modelTurn() {
+    if (over || toMove() === human) return;
+    busy = true; draw();
+    setStatus('Model đang nghĩ…', true);
+    setProgress(0);
+    try {
+      const res = await ask({ type: 'move', board: Array.from(board), player: toMove(), sims }, done => setProgress(done / sims));
+      place(res.move);
+      if (res.reason === 'center') $('info').textContent = `Model mở đầu ở ${name(res.move)} (giữa bàn).`;
+      else if (res.reason === 'policy') $('info').textContent = `Model đi ${name(res.move)} theo trực giác của mạng. Các nước nó thích nhất: ${res.top.map(([i, p]) => `${name(i)} ${pct(p)}`).join(', ')}.`;
+      else $('info').textContent = `Model đi ${name(res.move)} sau khi thử ${res.sims} nước trong ${(res.ms / 1000).toFixed(1)} giây. Được thử nhiều nhất: ${res.top.map(([i, p]) => `${name(i)} ${pct(p)}`).join(', ')}.`;
+      if (res.reason !== 'center') setEval((res.value + 1) / 2);
+    } catch (err) {
+      if (err.message !== 'cancelled') $('info').textContent = 'Lỗi khi model tính nước đi: ' + err.message;
+    }
+    busy = false; setProgress(0);
+    announce(); draw();
+  }
+
+  async function newGame() {
+    board = new Int8Array(NN); moves = []; over = null; hint = null; undos = 0;
+    $('info').textContent = '';
+    setEval(null);
+    if (busy) { busy = false; ready = false; setStatus('Đang khởi động lại…'); await startWorker(); ready = true; }
+    announce(); draw();
+    modelTurn();
+  }
+
+  svg.addEventListener('click', e => {
+    if (!canHumanMove()) return;
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const c = Math.round((p.x - M) / STEP), r = Math.round((p.y - M) / STEP);
+    if (r < 0 || r >= N || c < 0 || c >= N || board[r * N + c]) return;
+    place(r * N + c);
+    hover = -1;
+    announce(); draw();
+    modelTurn();
+  });
+  svg.addEventListener('mousemove', e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const c = Math.round((p.x - M) / STEP), r = Math.round((p.y - M) / STEP);
+    const h = r >= 0 && r < N && c >= 0 && c < N ? r * N + c : -1;
+    if (h !== hover) { hover = h; draw(); }
+  });
+  svg.addEventListener('mouseleave', () => { hover = -1; draw(); });
+
+  $('newBtn').addEventListener('click', newGame);
+  $('undoBtn').addEventListener('click', () => {
+    if (busy) return;
+    do { board[moves.pop()] = 0; } while (moves.length && toMove() !== human);
+    over = null; hint = null; undos++;
+    $('info').textContent = 'Đã đi lại.';
+    announce(); draw();
+  });
+  $('hintBtn').addEventListener('click', async () => {
+    if (!canHumanMove()) return;
+    const res = await ask({ type: 'hint', board: Array.from(board), player: human });
+    hint = res.top;
+    $('info').textContent = `Gợi ý của model cho bạn: ${res.top.map(([i, p], k) => `${k + 1}. ${name(i)} ${pct(p)}`).join(', ')}.`;
+    draw();
+  });
+  document.querySelectorAll('#sideSeg button').forEach(b => b.addEventListener('click', () => { human = +b.dataset.side; newGame(); }));
+  document.querySelectorAll('#levelSeg button').forEach(b => b.addEventListener('click', () => { sims = +b.dataset.sims; draw(); }));
+
+  $('sendBtn').addEventListener('click', () => {
+    const result = over.winner === 0 ? 'draw' : over.winner === human ? 'human' : 'model';
+    const title = `[game] ${result === 'human' ? 'Người thắng' : result === 'model' ? 'Model thắng' : 'Hoà'} sau ${moves.length} nước (${{ 0: 'Dễ', 100: 'Vừa', 300: 'Khó' }[sims]})`;
+    const body = [
+      'Ván cờ gửi từ trang chơi thử. Không cần sửa gì, chỉ cần bấm Submit.',
+      '',
+      '```gomoku',
+      'version: 1',
+      `result: ${result}`,
+      `human: ${human === 1 ? 'X' : 'O'}`,
+      `sims: ${sims}`,
+      `undos: ${undos}`,
+      'model: pv1',
+      `moves: ${moves.map(name).join(' ')}`,
+      '```',
+    ].join('\n');
+    window.open(`${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`, '_blank', 'noopener');
+  });
+
+  draw();
+  startWorker().then(res => {
+    ready = true;
+    $('info').textContent = `Model đã sẵn sàng (mỗi lần tính mất khoảng ${Math.max(1, Math.round(res.ms))} ms).`;
+    announce(); draw();
+    modelTurn();
+  }).catch(err => setStatus('Không tải được model: ' + err.message));
+})();
+</script>
+</body>
+</html>

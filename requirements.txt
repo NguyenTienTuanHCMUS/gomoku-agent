@@ -1,0 +1,6 @@
+numpy
+torch            # CPU build is enough: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+matplotlib       # notebook plots only
+onnx             # export_onnx.py only
+onnxscript       # export_onnx.py only
+onnxruntime      # export_onnx.py only (checks the export)

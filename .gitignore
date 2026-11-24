@@ -1,0 +1,8 @@
+# raw Gomocup archive: create_dataset.py downloads it again
+data/raw/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# local tool settings
+.claude/
+.impeccable/
