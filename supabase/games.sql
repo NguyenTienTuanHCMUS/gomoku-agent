@@ -29,5 +29,7 @@ create policy "web page can add games" on public.games
   with check (true);
 -- No select / update / delete policies: with RLS on, the public key cannot do any of those.
 
+-- Explicit grants, so this works whether or not "Grant API access to new tables automatically" was ticked.
+grant usage on schema public to anon, authenticated;
 revoke all on public.games from anon, authenticated;
 grant insert on public.games to anon, authenticated;
