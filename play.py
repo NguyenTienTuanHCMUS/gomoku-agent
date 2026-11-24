@@ -7,12 +7,15 @@
 
 Enter moves as column letter + row number, e.g. h8 (the centre).
 Commands: hint (model's top 5 for you), undo, quit.
+Every game is appended to data/local_games.jsonl when it ends or you quit (--no-save to skip).
 """
 import argparse
+import json
 import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -79,11 +82,27 @@ def ai_turn(model, search, board, player):
                   f"Khả năng thắng ước tính sau nước này: {win_pct(q)}")
 
 
+def save_game(path, history, human, result, sims, undos, model_path):
+    """Append the game as one JSON line (same fields as games sent from the web page)."""
+    record = {
+        "source": "local", "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "result": result, "human": SYM[human], "sims": sims, "undos": undos,
+        "model": os.path.basename(os.path.dirname(model_path)) or model_path,
+        "moves": [name(m) for m in history],
+    }
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    print(f"Đã lưu ván ({len(history)} nước, kết quả: {result}) vào {path}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--sims", type=int, default=400, help="MCTS simulations per move (0 = no search)")
     ap.add_argument("--ai-first", action="store_true", help="model plays X and moves first")
+    ap.add_argument("--games", default="data/local_games.jsonl", help="where finished games are appended")
+    ap.add_argument("--no-save", action="store_true", help="do not save the game")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -94,6 +113,7 @@ def main():
     history = []
     human = 2 if args.ai_first else 1
     player = 1
+    result, undos = "unfinished", 0
     print(f"Model: {args.model} ({'có' if model.has_value else 'không có'} value head), "
           f"{'MCTS ' + str(args.sims) + ' lượt/nước' if search else 'không tìm kiếm'}.")
     print(f"Bạn cầm {SYM[human]}, model cầm {SYM[3 - human]}. X đi trước. "
@@ -103,6 +123,7 @@ def main():
     while True:
         if not (board == 0).any():
             print("Hoà: bàn cờ đã đầy.")
+            result = "draw"
             break
 
         if player == human:
@@ -122,6 +143,7 @@ def main():
                     continue
                 for _ in range(2):
                     board[history.pop()] = 0
+                undos += 1
                 show(board, history[-1] if history else None)
                 continue
             move = parse(text)
@@ -139,8 +161,12 @@ def main():
             print(f"Model ({SYM[player]}) đi {name(move)}: {msg}")
         if is_five(board, *move):
             print("Bạn thắng!" if player == human else "Model thắng!")
+            result = "human" if player == human else "model"
             break
         player = 3 - player
+
+    if history and not args.no_save:
+        save_game(args.games, history, human, result, args.sims, undos, args.model)
 
 
 if __name__ == "__main__":

@@ -73,6 +73,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outlin
 .primary { background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 600; }
 .primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 .note { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.opt { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.82rem; color: var(--muted); cursor: pointer; }
+.opt input { margin: 0.2rem 0 0; accent-color: var(--accent); }
+.opt[hidden] { display: none; }
 #info { font-size: 0.86rem; margin: 0; min-height: 2.6em; }
 #moves { font-family: var(--f-mono); font-size: 0.8rem; color: var(--muted); max-height: 7.5rem; overflow-y: auto; margin: 0; word-spacing: 0.15em; }
 #send[hidden] { display: none; }
@@ -120,6 +123,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
           <button type="button" data-sims="300">Khó</button>
         </div>
         <p class="note" id="levelNote"></p>
+        <label class="opt" id="saveOptRow" hidden><input type="checkbox" id="saveOpt" checked> Lưu ván ẩn danh (chỉ nước đi và kết quả) để giúp model học thêm</label>
         <div class="row">
           <button type="button" id="newBtn" class="primary">Ván mới</button>
           <button type="button" id="undoBtn">Đi lại</button>
@@ -147,6 +151,12 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
 
 <script>
 (() => {
+  // Automatic saving to Supabase (see supabase/README.md). Leave empty to turn saving off.
+  // The publishable/anon key is meant to be public; the table only accepts inserts. Never put a secret key here.
+  const SUPABASE_URL = '';
+  const SUPABASE_KEY = '';
+  const MODEL_NAME = 'pv1';
+
   const N = 15, NN = 225, COLS = 'abcdefghijklmno';
   const S = 640, M = 34, STEP = (S - 2 * M) / (N - 1);   // board geometry: 15 lines, margin for coordinates
   const LEVELS = { 0: 'Dễ: không tìm kiếm, đi theo trực giác của mạng (kèm thắng ngay / chặn ngay).', 100: 'Vừa: thử thêm 100 nước đi trước mỗi lượt, khoảng 3 giây.', 300: 'Khó: thử thêm 300 nước đi trước mỗi lượt, khoảng 10 giây.' };
@@ -162,6 +172,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
 
   let board = new Int8Array(NN), moves = [], human = 1, sims = 100, over = null, busy = false, ready = false;
   let undos = 0, hint = null, hover = -1, lastEval = null;
+  let gameUid = newUid(), savedLen = 0;
   let worker, nextId = 1, waiting = new Map();
 
   // ---------------------------------------------------------------- worker
@@ -256,7 +267,27 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
     const line = fiveLine(i);
     if (line) over = { winner: board[i], line };
     else if (moves.length === NN) over = { winner: 0, line: null };
+    if (over) saveGame(over.winner === 0 ? 'draw' : over.winner === human ? 'human' : 'model');
   }
+
+  // ---------------------------------------------------------------- saving
+  const saving = !!(SUPABASE_URL && SUPABASE_KEY);
+  function newUid() {
+    if (self.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+  }
+  function saveGame(result, keepalive) {
+    if (!saving || !$('saveOpt').checked || !moves.length || savedLen === moves.length) return;
+    savedLen = moves.length;
+    const headers = { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' };
+    if (SUPABASE_KEY.startsWith('eyJ')) headers.Authorization = 'Bearer ' + SUPABASE_KEY;   // legacy anon JWT
+    const body = JSON.stringify({ game_uid: gameUid, version: 1, result, human: human === 1 ? 'X' : 'O', sims, undos, model: MODEL_NAME, moves: moves.map(name) });
+    fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/games', { method: 'POST', headers, body, keepalive: !!keepalive })
+      .then(r => { if (!r.ok) savedLen = 0; })
+      .catch(() => { savedLen = 0; });
+  }
+  const saveUnfinished = keepalive => { if (!over && moves.length >= 10) saveGame('unfinished', keepalive); };
+  addEventListener('pagehide', () => saveUnfinished(true));
 
   function announce() {
     if (!over) { setStatus(toMove() === human ? `Lượt của bạn (${human === 1 ? 'X' : 'O'})` : 'Lượt của model'); return; }
@@ -285,7 +316,9 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
   }
 
   async function newGame() {
+    saveUnfinished(false);
     board = new Int8Array(NN); moves = []; over = null; hint = null; undos = 0;
+    gameUid = newUid(); savedLen = 0;
     $('info').textContent = '';
     setEval(null);
     if (busy) { busy = false; ready = false; setStatus('Đang khởi động lại…'); await startWorker(); ready = true; }
@@ -317,7 +350,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
   $('undoBtn').addEventListener('click', () => {
     if (busy) return;
     do { board[moves.pop()] = 0; } while (moves.length && toMove() !== human);
-    over = null; hint = null; undos++;
+    over = null; hint = null; undos++; savedLen = 0;
     $('info').textContent = 'Đã đi lại.';
     announce(); draw();
   });
@@ -350,6 +383,11 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
     window.open(`${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`, '_blank', 'noopener');
   });
 
+  if (saving) {
+    $('saveOptRow').hidden = false;
+    try { $('saveOpt').checked = localStorage.getItem('gomoku-save') !== 'off'; } catch (e) { /* storage blocked: keep default */ }
+    $('saveOpt').addEventListener('change', () => { try { localStorage.setItem('gomoku-save', $('saveOpt').checked ? 'on' : 'off'); } catch (e) { /* ignore */ } });
+  }
   draw();
   startWorker().then(res => {
     ready = true;

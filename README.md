@@ -37,7 +37,7 @@ python play.py --ai-first      # model cầm X
 python play.py --sims 0        # không tìm kiếm: mạng + kiểm tra thắng/chặn
 ```
 
-Nhập nước đi kiểu `h8` (ô giữa bàn). Các lệnh: `hint`, `undo`, `quit`.
+Nhập nước đi kiểu `h8` (ô giữa bàn). Các lệnh: `hint`, `undo`, `quit`. Mỗi ván (kể cả ván bỏ dở) được tự động ghi thêm vào `data/local_games.jsonl`; thêm `--no-save` nếu không muốn lưu.
 
 Các script khác:
 
@@ -49,11 +49,14 @@ Các script khác:
 | `python arena.py --a models/pv1/gomoku_pv.pt:200 --b models/run1/gomoku_policy.pt:0` | Cho hai agent đấu với nhau từ các khai cuộc Gomocup, mỗi khai cuộc 2 ván đổi màu (`:0` nghĩa là không tìm kiếm) |
 | `python export_onnx.py` | Xuất model sang `docs/model.onnx` cho trang web |
 | `python -m http.server 8765 --directory docs` | Chạy thử trang web trên máy tại http://localhost:8765 |
-| `python fetch_games.py` | Tải các ván người chơi đã gửi (GitHub Issues) về `data/human_games.jsonl` |
+| `python fetch_games.py` | Tải các ván người chơi trên web (Supabase và GitHub Issues) về `data/human_games.jsonl`, bỏ các ván không hợp lệ |
 
-## Gửi ván cờ để model học thêm
+## Lưu ván cờ để model học thêm
 
-Sau mỗi ván trên trang web có nút **Gửi ván này lên GitHub**. Nút này mở trang tạo Issue với nội dung ván cờ điền sẵn; bạn xem lại rồi bấm Submit (cần tài khoản GitHub, và Issue sẽ công khai). Những ván người thắng model đặc biệt có giá trị, vì chúng chỉ ra chỗ model còn yếu.
+- **Tự động:** trang web gửi mỗi ván vào một bảng Supabase khi ván kết thúc (và ván bỏ dở từ 10 nước khi bấm "Ván mới" hoặc đóng trang). Chỉ lưu nước đi, kết quả, quân người chơi cầm, độ khó và số lần đi lại; người chơi có thể bỏ chọn ô "Lưu ván ẩn danh". Cách cài đặt ở [supabase/README.md](supabase/README.md).
+- **Thủ công:** sau mỗi ván có nút **Gửi ván này lên GitHub**, mở trang tạo Issue với nội dung ván cờ điền sẵn (cần tài khoản GitHub, Issue công khai).
+
+Những ván người thắng model đặc biệt có giá trị, vì chúng chỉ ra chỗ model còn yếu.
 
 ## Cấu trúc thư mục
 
@@ -65,7 +68,8 @@ gomoku.py           mạng, luật cờ, MCTS
 play.py             chơi trong terminal
 arena.py            cho các agent đấu với nhau
 export_onnx.py      xuất model cho web
-fetch_games.py      tải ván người chơi gửi lên
+fetch_games.py      tải ván người chơi trên web về
+supabase/           bảng lưu ván tự động (SQL + hướng dẫn)
 data/               dataset đã xử lý (.npz)
 models/run1/        policy (kèm biểu đồ train từ Kaggle)
 models/pv1/         policy + value head
