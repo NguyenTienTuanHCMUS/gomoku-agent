@@ -133,7 +133,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
 
       <div class="card" id="send" hidden>
         <div class="label">Giúp model học thêm</div>
-        <p class="note">Gửi ván này cho dự án để sau này model học từ nó, nhất là những ván bạn thắng. Nút sẽ mở trang tạo Issue trên GitHub với nội dung ván cờ điền sẵn; bạn xem lại rồi tự bấm <b>Submit</b>. Cần tài khoản GitHub, và ván sẽ hiển thị công khai dưới tên tài khoản của bạn.</p>
+        <p class="note" id="sendNote"></p>
         <button type="button" id="sendBtn" class="primary">Gửi ván này lên GitHub</button>
       </div>
 
@@ -242,7 +242,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
     $('moves').textContent = moves.length ? moves.map((m, k) => `${k + 1}.${name(m)}`).join(' ') : '—';
     $('undoBtn').disabled = busy || !moves.some((_, k) => (k % 2 === 0 ? 1 : 2) === human);
     $('hintBtn').disabled = busy || !!over || !ready || toMove() !== human;
-    $('send').hidden = !over || moves.length < 6;
+    drawSendCard();
     document.querySelectorAll('#sideSeg button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.side === human));
     document.querySelectorAll('#levelSeg button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.sims === sims));
     $('levelNote').textContent = LEVELS[sims];
@@ -276,15 +276,33 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
     if (self.crypto && crypto.randomUUID) return crypto.randomUUID();
     return 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
   }
+  let saveState = 'idle';   // idle | saving | saved | failed: the save of the current game
+  const GITHUB_NOTE = 'Gửi ván này cho dự án để sau này model học từ nó, nhất là những ván bạn thắng. Nút sẽ mở trang tạo Issue trên GitHub với nội dung ván cờ điền sẵn; bạn xem lại rồi tự bấm Submit. Cần tài khoản GitHub, và ván sẽ hiển thị công khai dưới tên tài khoản của bạn.';
+  function drawSendCard() {
+    const autosave = saving && $('saveOpt').checked;
+    let note = null, button = false;
+    if (over && moves.length >= 6) {
+      if (!saving) { note = GITHUB_NOTE; button = true; }                       // saving not configured: manual only
+      else if (autosave && saveState === 'saving') note = 'Đang lưu ván này…';
+      else if (autosave && saveState === 'saved') note = 'Đã lưu ván này (ẩn danh). Cảm ơn bạn: những ván như thế này giúp model học thêm, nhất là ván bạn thắng.';
+      else if (autosave && saveState === 'failed') { note = 'Không lưu được ván này, có thể do mạng. Bạn vẫn có thể gửi nó lên GitHub: nút sẽ mở trang tạo Issue với nội dung ván điền sẵn (cần tài khoản GitHub, Issue công khai).'; button = true; }
+    }
+    $('send').hidden = note === null;
+    $('sendNote').textContent = note || '';
+    $('sendBtn').hidden = !button;
+  }
   function saveGame(result, keepalive) {
     if (!saving || !$('saveOpt').checked || !moves.length || savedLen === moves.length) return;
     savedLen = moves.length;
+    const finished = result !== 'unfinished';
+    if (finished) saveState = 'saving';
     const headers = { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' };
     if (SUPABASE_KEY.startsWith('eyJ')) headers.Authorization = 'Bearer ' + SUPABASE_KEY;   // legacy anon JWT
     const body = JSON.stringify({ game_uid: gameUid, version: 1, result, human: human === 1 ? 'X' : 'O', sims, undos, model: MODEL_NAME, moves: moves.map(name) });
     fetch(SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/games', { method: 'POST', headers, body, keepalive: !!keepalive })
-      .then(r => { if (!r.ok) savedLen = 0; })
-      .catch(() => { savedLen = 0; });
+      .then(r => { if (!r.ok) throw new Error(r.status); if (finished) saveState = 'saved'; })
+      .catch(() => { savedLen = 0; if (finished) saveState = 'failed'; })
+      .finally(() => drawSendCard());
   }
   const saveUnfinished = keepalive => { if (!over && moves.length >= 10) saveGame('unfinished', keepalive); };
   addEventListener('pagehide', () => saveUnfinished(true));
@@ -318,7 +336,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
   async function newGame() {
     saveUnfinished(false);
     board = new Int8Array(NN); moves = []; over = null; hint = null; undos = 0;
-    gameUid = newUid(); savedLen = 0;
+    gameUid = newUid(); savedLen = 0; saveState = 'idle';
     $('info').textContent = '';
     setEval(null);
     if (busy) { busy = false; ready = false; setStatus('Đang khởi động lại…'); await startWorker(); ready = true; }
@@ -350,7 +368,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
   $('undoBtn').addEventListener('click', () => {
     if (busy) return;
     do { board[moves.pop()] = 0; } while (moves.length && toMove() !== human);
-    over = null; hint = null; undos++; savedLen = 0;
+    over = null; hint = null; undos++; savedLen = 0; saveState = 'idle';
     $('info').textContent = 'Đã đi lại.';
     announce(); draw();
   });
@@ -386,7 +404,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
   if (saving) {
     $('saveOptRow').hidden = false;
     try { $('saveOpt').checked = localStorage.getItem('gomoku-save') !== 'off'; } catch (e) { /* storage blocked: keep default */ }
-    $('saveOpt').addEventListener('change', () => { try { localStorage.setItem('gomoku-save', $('saveOpt').checked ? 'on' : 'off'); } catch (e) { /* ignore */ } });
+    $('saveOpt').addEventListener('change', () => { try { localStorage.setItem('gomoku-save', $('saveOpt').checked ? 'on' : 'off'); } catch (e) { /* ignore */ } draw(); });
   }
   draw();
   startWorker().then(res => {
