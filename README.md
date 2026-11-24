@@ -47,9 +47,29 @@ Các script khác:
 | `train_policy.ipynb` | Train policy trên Kaggle: upload file `.npz` thành Dataset, chọn GPU T4, Run All, tải `gomoku_policy.pt` về `models/run1/` |
 | `python train_value.py` | Train value head trên CPU → `models/pv1/gomoku_pv.pt` |
 | `python arena.py --a models/pv1/gomoku_pv.pt:200 --b models/run1/gomoku_policy.pt:0` | Cho hai agent đấu với nhau từ các khai cuộc Gomocup, mỗi khai cuộc 2 ván đổi màu (`:0` nghĩa là không tìm kiếm) |
+| `python loop.py --gens 5` (hoặc `selfplay_kaggle.ipynb` trên Kaggle) | Vòng tự học: model tự đánh với chính nó, học từ các ván đó, rồi đấu với bản cũ; mạnh hơn thì thay. Xem mục dưới |
 | `python export_onnx.py` | Xuất model sang `docs/model.onnx` cho trang web |
 | `python -m http.server 8765 --directory docs` | Chạy thử trang web trên máy tại http://localhost:8765 |
 | `python fetch_games.py` | Tải các ván người chơi trên web (Supabase và GitHub Issues) về `data/human_games.jsonl`, bỏ các ván không hợp lệ |
+
+## Tự học bằng cách đánh với chính nó (self-play)
+
+Giống AlphaZero, nhưng bắt đầu từ model đã học từ Gomocup thay vì từ số 0. Mỗi **thế hệ** gồm 3 bước:
+
+1. **Tự đánh** ([selfplay.py](selfplay.py)): model tốt nhất hiện tại + MCTS đánh với chính nó (mặc định 800 ván, 200 lượt tìm kiếm mỗi nước). Hàng trăm ván được tìm kiếm cùng lúc và mạng đánh giá các thế cờ của chúng theo từng lô lớn ([batch_mcts.py](batch_mcts.py)), nên chạy nhanh trên GPU. Mỗi ván bắt đầu từ một khai cuộc Gomocup ngẫu nhiên, có thêm nhiễu Dirichlet và vài nước đầu chọn ngẫu nhiên theo MCTS để các ván không giống nhau. Ở mỗi nước, script lưu bàn cờ, **cách MCTS chia lượt ghé cho các nước** và kết quả ván.
+2. **Train** ([train_selfplay.py](train_selfplay.py)): train cả mạng; policy học theo cách MCTS chia lượt ghé (tìm kiếm chọn tốt hơn mạng trần, nên mạng học theo chính phiên bản giỏi hơn của nó), value học theo kết quả ván. Dùng ván của 3 thế hệ gần nhất, trộn thêm 25% thế cờ Gomocup để không quên kiến thức cũ.
+3. **Đấu kiểm tra**: model mới đấu model tốt nhất bằng `arena.py` (40 khai cuộc × 2 màu). Đạt từ 55% điểm thì thành model tốt nhất mới.
+
+```powershell
+python loop.py --gens 5                 # chạy 5 thế hệ; Ctrl+C để dừng, chạy lại lệnh là làm tiếp
+python loop.py --gens 3 --games 400     # thế hệ nhỏ hơn, nhanh hơn
+```
+
+**Trên GPU của Kaggle (nên dùng):** tạo notebook mới, *File → Import Notebook* chọn [selfplay_kaggle.ipynb](selfplay_kaggle.ipynb), bật GPU T4 x2 và Internet, rồi *Save & Run All (Commit)*. Notebook tự tải mã nguồn từ GitHub, chạy loop tối đa 11 giờ và để model tốt nhất ở tab Output. Hướng dẫn chạy tiếp lần sau nằm ở ô đầu của notebook.
+
+Trên máy, các script tự dùng GPU nếu PyTorch thấy card NVIDIA (cần bản PyTorch có CUDA), không thì chạy CPU (chậm hơn nhiều).
+
+Tiến trình nằm trong `runs/selfplay/state.json`, ván tự đánh trong `data/selfplay/`, model từng thế hệ trong `models/sp/` (ba thư mục này không đưa lên git). Khi có model tốt hơn pv1, chép nó sang `models/pv2/gomoku_pv.pt` rồi chạy `python export_onnx.py --model models/pv2/gomoku_pv.pt` để trang web dùng model mới.
 
 ## Lưu ván cờ để model học thêm
 
@@ -67,6 +87,11 @@ train_value.py      train value head (CPU)
 gomoku.py           mạng, luật cờ, MCTS
 play.py             chơi trong terminal
 arena.py            cho các agent đấu với nhau
+selfplay.py         model tự đánh với chính nó, lưu dữ liệu train
+train_selfplay.py   train từ ván tự đánh
+loop.py             vòng tự học: tự đánh -> train -> đấu kiểm tra
+batch_mcts.py       MCTS chạy nhiều ván cùng lúc, đánh giá theo lô (GPU)
+selfplay_kaggle.ipynb  chạy loop.py trên GPU của Kaggle
 export_onnx.py      xuất model cho web
 fetch_games.py      tải ván người chơi trên web về
 supabase/           bảng lưu ván tự động (SQL + hướng dẫn)

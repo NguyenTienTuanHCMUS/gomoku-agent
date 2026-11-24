@@ -138,14 +138,15 @@ def policy_move(model, board, player):
 # ---------------------------------------------------------------- MCTS
 
 class Node:
-    __slots__ = ("P", "N", "W", "v", "children")
+    __slots__ = ("P", "N", "W", "v", "children", "forced")
 
-    def __init__(self, priors, v):
+    def __init__(self, priors, v, forced=False):
         self.P = priors                       # (225,) prior probabilities, 0 for moves not considered
         self.N = np.zeros(N * N, np.float32)  # visit counts per move
         self.W = np.zeros(N * N, np.float32)  # summed values per move, from this node's player's view
         self.v = v                            # value estimate of this position for the player to move
         self.children = {}
+        self.forced = forced                  # moves were dictated by the tactics check, not the network
 
 
 class MCTS:
@@ -161,27 +162,31 @@ class MCTS:
         self.model, self.sims, self.c_puct, self.fpu = model, sims, c_puct, fpu
 
     def expand(self, board, player):
-        mine = win_cells(board, player)
-        if len(mine):
-            return Node(_only(mine), 1.0)
-        theirs = win_cells(board, 3 - player)
-        if len(theirs) >= 2:
-            return Node(_only(theirs), -1.0)
+        node, block = tactics(board, player)
+        if node is not None:
+            return node
         p, v = evaluate(self.model, board, player)
-        if len(theirs) == 1:
-            p = _only(theirs)
-        return Node(p, 0.0 if v is None else v)
+        return make_node(p, v, block)
 
     def select(self, node):
-        n = node.N
-        q = np.where(n > 0, node.W / np.maximum(n, 1), node.v - self.fpu)
-        u = self.c_puct * node.P * math.sqrt(n.sum() + 1) / (1 + n)
-        return int(np.where(node.P > 0, q + u, -np.inf).argmax())
+        return puct_select(node, self.c_puct, self.fpu)
 
-    def search(self, board, player):
-        """Run the simulations; returns the root (root.N = visit counts, root.W / root.N = values)."""
-        root = self.expand(board, player)
-        for _ in range(self.sims):
+    def search(self, board, player, root=None, noise=None, rng=None):
+        """Run the simulations; returns the root (root.N = visit counts, root.W / root.N = values).
+
+        root:  a subtree kept from the previous move for this same position (tree reuse). Its visits
+               count towards `sims`, but at least sims // 4 new simulations are always run.
+        noise: (alpha, eps) Dirichlet noise mixed into the root priors, used in self-play so the
+               search sometimes tries moves the network does not like yet. Only cells within two
+               steps of a stone get noise, and forced roots (win / block) get none.
+        """
+        if root is None:
+            root = self.expand(board, player)
+            sims = self.sims
+        else:
+            sims = max(self.sims - int(root.N.sum()), self.sims // 4)
+        add_root_noise(root, board, noise, rng or np.random.default_rng())
+        for _ in range(sims):
             b, p, node, path = board.copy(), player, root, []
             while True:
                 a = self.select(node)
@@ -214,6 +219,59 @@ class MCTS:
             return (N // 2, N // 2), None
         root = self.search(board, player)
         return divmod(int(root.N.argmax()), N), root
+
+
+def tactics(board, player):
+    """Exact checks done before asking the network.
+    -> (Node, None) when they decide the position alone (a win for either side),
+       (None, block) otherwise; block = the one cell that must be blocked, or None."""
+    mine = win_cells(board, player)
+    if len(mine):
+        return Node(_only(mine), 1.0, True), None
+    theirs = win_cells(board, 3 - player)
+    if len(theirs) >= 2:
+        return Node(_only(theirs), -1.0, True), None
+    return None, (theirs if len(theirs) == 1 else None)
+
+
+def make_node(p, v, block):
+    """Node from the network's output; a forced block keeps the value but only allows the block."""
+    if block is not None:
+        return Node(_only(block), 0.0 if v is None else float(v), True)
+    return Node(p, 0.0 if v is None else float(v))
+
+
+def puct_select(node, c_puct, fpu):
+    n = node.N
+    q = np.where(n > 0, node.W / np.maximum(n, 1), node.v - fpu)
+    u = c_puct * node.P * math.sqrt(n.sum() + 1) / (1 + n)
+    return int(np.where(node.P > 0, q + u, -np.inf).argmax())
+
+
+def add_root_noise(root, board, noise, rng):
+    """Dirichlet noise on the root priors (self-play exploration); only cells near stones, never on forced roots."""
+    if noise is None or root.forced:
+        return
+    alpha, eps = noise
+    cells = np.flatnonzero(near_stones(board) & (board.ravel() == 0) & (root.P > 0))
+    if len(cells) > 1:
+        root.P = root.P * (1 - eps)
+        root.P[cells] += eps * rng.dirichlet([alpha] * len(cells))
+
+
+def near_stones(board, dist=2):
+    """(225,) bool: cells within `dist` steps (any direction) of a stone; the centre on an empty board."""
+    occ = board > 0
+    if not occ.any():
+        out = np.zeros((N, N), bool)
+        out[N // 2, N // 2] = True
+        return out.ravel()
+    pad = np.pad(occ, dist)
+    out = np.zeros((N, N), bool)
+    for dr in range(2 * dist + 1):
+        for dc in range(2 * dist + 1):
+            out |= pad[dr:dr + N, dc:dc + N]
+    return out.ravel()
 
 
 def _only(cells):

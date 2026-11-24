@@ -27,6 +27,13 @@ def make_agent(spec):
 
 
 def openings(data, count, seed):
+    """`count` random opening positions (different seeds give different sets)."""
+    out = all_openings(data)
+    rng = np.random.default_rng(seed)
+    return [out[i] for i in rng.choice(len(out), size=min(count, len(out)), replace=False)]
+
+
+def all_openings(data):
     """Opening positions = the first labelled position of each game (stones the tournament placed)."""
     d = np.load(data)
     X, game = d["X"], d["game"]
@@ -40,8 +47,7 @@ def openings(data, count, seed):
         if key not in seen:
             seen.add(key)
             out.append(b)
-    rng = np.random.default_rng(seed)
-    return [out[i] for i in rng.choice(len(out), size=min(count, len(out)), replace=False)]
+    return out
 
 
 def play(task):
@@ -64,7 +70,8 @@ def play(task):
     return 0.5, a_is_x, 225
 
 
-def main():
+def main(argv=None):
+    """Returns A's score in [0, 1] (win 1, draw 0.5), so loop.py can call it directly."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--a", required=True, help="MODEL:SIMS")
     ap.add_argument("--b", required=True, help="MODEL:SIMS")
@@ -72,7 +79,7 @@ def main():
     ap.add_argument("--data", default="data/gomoku_15x15.npz")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2))
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     ops = openings(args.data, args.openings, args.seed)
     tasks = [(args.a, args.b, b, a_is_x) for b in ops for a_is_x in (True, False)]
@@ -93,6 +100,7 @@ def main():
     print(f"\nA = {args.a}\nB = {args.b}")
     print(f"A score {score:.3f} ± {1.96 * se:.3f} (95%) over {len(s)} games  "
           f"[as X {s[ax].mean():.3f}, as O {s[~ax].mean():.3f}]  ≈ {elo:+.0f} Elo  ({time.time() - t0:.0f}s)")
+    return float(score)
 
 
 if __name__ == "__main__":
