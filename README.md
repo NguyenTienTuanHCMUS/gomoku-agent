@@ -13,6 +13,10 @@ Model chạy hoàn toàn trên máy người chơi, không cần cài gì.
 |---|---|
 | Policy: đoán nước tiếp theo của engine Gomocup | top-1 **54,7%**, top-5 **86%** |
 | Value: đoán ai sẽ thắng từ thế cờ hiện tại | đúng **76,5%** (65,6% đầu ván, 82,6% khi bàn đã có 30+ quân) |
+| MCTS 200 lượt + value head, đấu với policy không tìm kiếm | thắng **96,7%** (58/60 ván), khoảng +585 Elo |
+| MCTS 200 lượt không có value head, đấu với policy không tìm kiếm | thắng 78,3% (47/60 ván), khoảng +223 Elo |
+
+Hai trận cuối dùng `arena.py`: 30 khai cuộc thật của Gomocup, mỗi khai cuộc đánh 2 ván đổi màu. Tìm kiếm giúp model mạnh hơn rõ rệt, và value head là phần đóng góp lớn nhất: cùng 200 lượt nhưng có value thì tỉ lệ thắng tăng từ 78% lên 97%.
 
 Mạng: ResNet 8 block × 96 kênh, 1,34 triệu tham số (policy), cộng 7.361 tham số cho value head.
 
