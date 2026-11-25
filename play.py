@@ -28,7 +28,8 @@ from gomoku import MCTS, N, evaluate, is_five, load_model, policy_move
 
 COLS = "abcdefghijklmno"
 SYM = {0: ".", 1: "X", 2: "O"}
-DEFAULT_MODEL = "models/pv1/gomoku_pv.pt" if os.path.exists("models/pv1/gomoku_pv.pt") else "models/run1/gomoku_policy.pt"
+DEFAULT_MODEL = next(p for p in ("models/pv2/gomoku_pv.pt", "models/pv1/gomoku_pv.pt", "models/run1/gomoku_policy.pt")
+                     if os.path.exists(p) or p.endswith("gomoku_policy.pt"))
 
 
 def name(move):

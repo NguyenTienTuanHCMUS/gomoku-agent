@@ -10,7 +10,7 @@ One generation:
 Progress is kept in runs/selfplay/state.json, so the loop can be stopped (Ctrl+C) and started again:
 finished steps are skipped.
 
-    python loop.py --gens 5                     # 5 generations from models/pv1/gomoku_pv.pt
+    python loop.py --gens 5                     # 5 generations from models/pv2/gomoku_pv.pt
     python loop.py --gens 3 --games 400         # smaller generations
     python loop.py --gens 50 --hours 11         # as many as fit in 11 hours (Kaggle sessions stop at 12)
 
@@ -29,7 +29,7 @@ import train_selfplay
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--start", default="models/pv1/gomoku_pv.pt", help="first best model")
+    ap.add_argument("--start", default="models/pv2/gomoku_pv.pt", help="first best model")
     ap.add_argument("--gens", type=int, default=5, help="generations to run in this call")
     ap.add_argument("--games", type=int, default=800, help="self-play games per generation")
     ap.add_argument("--sims", type=int, default=200, help="MCTS simulations per move in self-play")

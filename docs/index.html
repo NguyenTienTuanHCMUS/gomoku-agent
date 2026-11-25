@@ -154,7 +154,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
   // The publishable/anon key is meant to be public; the table only accepts inserts. Never put a secret key here.
   const SUPABASE_URL = 'https://nciweyvygmarnpwfhipr.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_DFLFmETAJZOvejsBBrrrqg_RrWfY_8q';
-  const MODEL_NAME = 'pv1';
+  const MODEL_NAME = 'pv2';
 
   const N = 15, NN = 225, COLS = 'abcdefghijklmno';
   const S = 640, M = 34, STEP = (S - 2 * M) / (N - 1);   // board geometry: 15 lines, margin for coordinates
@@ -393,7 +393,7 @@ footer { margin-top: 2rem; font-size: 0.82rem; color: var(--muted); max-width: 4
       `human: ${human === 1 ? 'X' : 'O'}`,
       `sims: ${sims}`,
       `undos: ${undos}`,
-      'model: pv1',
+      `model: ${MODEL_NAME}`,
       `moves: ${moves.map(name).join(' ')}`,
       '```',
     ].join('\n');

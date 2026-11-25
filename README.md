@@ -15,8 +15,11 @@ Model chạy hoàn toàn trên máy người chơi, không cần cài gì.
 | Value: đoán ai sẽ thắng từ thế cờ hiện tại | đúng **76,5%** (65,6% đầu ván, 82,6% khi bàn đã có 30+ quân) |
 | MCTS 200 lượt + value head, đấu với policy không tìm kiếm | thắng **96,7%** (58/60 ván), khoảng +585 Elo |
 | MCTS 200 lượt không có value head, đấu với policy không tìm kiếm | thắng 78,3% (47/60 ván), khoảng +223 Elo |
+| **pv2** (pv1 + 14 thế hệ self-play) đấu **pv1**, cả hai MCTS 200 lượt | thắng **93%** (100 ván), khoảng **+450 Elo** |
 
-Hai trận cuối dùng `arena.py`: 30 khai cuộc thật của Gomocup, mỗi khai cuộc đánh 2 ván đổi màu. Tìm kiếm giúp model mạnh hơn rõ rệt, và value head là phần đóng góp lớn nhất: cùng 200 lượt nhưng có value thì tỉ lệ thắng tăng từ 78% lên 97%.
+Các trận đấu đều bắt đầu từ khai cuộc thật của Gomocup, mỗi khai cuộc đánh 2 ván đổi màu (trận pv2–pv1 dùng 50 khai cuộc mà vòng self-play chưa dùng để kiểm tra). Tìm kiếm giúp model mạnh hơn rõ rệt, value head là phần đóng góp lớn nhất (cùng 200 lượt, có value thì tỉ lệ thắng tăng từ 78% lên 97%), và self-play thêm khoảng 450 Elo nữa.
+
+Trang web dùng **pv2**. Nó được tạo bằng [selfplay_kaggle.ipynb](selfplay_kaggle.ipynb) trong một phiên khoảng 11 giờ trên 2 GPU T4 của Kaggle: 14 thế hệ, 28.000 ván tự đánh, 8 lần model mới thắng cổng kiểm tra. pv2 đoán trúng nước của engine Gomocup ít hơn pv1 một chút (52,6% so với 55,0%), vì nó đã chơi theo cách của riêng mình thay vì chỉ bắt chước.
 
 Mạng: ResNet 8 block × 96 kênh, 1,34 triệu tham số (policy), cộng 7.361 tham số cho value head.
 
@@ -69,7 +72,7 @@ python loop.py --gens 3 --games 400     # thế hệ nhỏ hơn, nhanh hơn
 
 Trên máy, các script tự dùng GPU nếu PyTorch thấy card NVIDIA (cần bản PyTorch có CUDA), không thì chạy CPU (chậm hơn nhiều).
 
-Tiến trình nằm trong `runs/selfplay/state.json`, ván tự đánh trong `data/selfplay/`, model từng thế hệ trong `models/sp/` (ba thư mục này không đưa lên git). Khi có model tốt hơn pv1, chép nó sang `models/pv2/gomoku_pv.pt` rồi chạy `python export_onnx.py --model models/pv2/gomoku_pv.pt` để trang web dùng model mới.
+Tiến trình nằm trong `runs/selfplay/state.json`, ván tự đánh trong `data/selfplay/`, model từng thế hệ trong `models/sp/` (ba thư mục này không đưa lên git). Khi có model tốt hơn model đang dùng, chép nó sang một thư mục mới (ví dụ `models/pv3/gomoku_pv.pt`), đấu thử với `arena.py`, rồi chạy `python export_onnx.py --model models/pv3/gomoku_pv.pt` và đổi `MODEL_NAME` trong `docs/index.html` để trang web dùng model mới.
 
 ## Lưu ván cờ để model học thêm
 
@@ -97,7 +100,8 @@ fetch_games.py      tải ván người chơi trên web về
 supabase/           bảng lưu ván tự động (SQL + hướng dẫn)
 data/               dataset đã xử lý (.npz)
 models/run1/        policy (kèm biểu đồ train từ Kaggle)
-models/pv1/         policy + value head
+models/pv1/         policy + value head (học từ Gomocup)
+models/pv2/         pv1 + 14 thế hệ self-play (model trang web đang dùng)
 docs/               trang web (GitHub Pages): index.html, engine-worker.js, model.onnx, explainer.html
 ```
 

@@ -58,7 +58,7 @@ def worker(job):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="models/pv1/gomoku_pv.pt")
+    ap.add_argument("--model", default="models/pv2/gomoku_pv.pt")
     ap.add_argument("--games", type=int, default=800)
     ap.add_argument("--sims", type=int, default=200)
     ap.add_argument("--out", default="data/selfplay/gen1.npz")

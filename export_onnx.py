@@ -1,7 +1,7 @@
 """Export a checkpoint to ONNX for the web app (docs/), and check it gives the same numbers as PyTorch.
 
     python -m pip install onnx onnxscript onnxruntime
-    python export_onnx.py --model models/pv1/gomoku_pv.pt --out docs/model.onnx
+    python export_onnx.py --model models/pv2/gomoku_pv.pt --out docs/model.onnx
 """
 import argparse
 
@@ -25,7 +25,7 @@ class Export(torch.nn.Module):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="models/pv1/gomoku_pv.pt")
+    ap.add_argument("--model", default="models/pv2/gomoku_pv.pt")
     ap.add_argument("--out", default="docs/model.onnx")
     args = ap.parse_args()
 

@@ -54,7 +54,7 @@ def load_gomocup(path, count, val_count, seed):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="models/pv1/gomoku_pv.pt", help="starting weights")
+    ap.add_argument("--model", default="models/pv2/gomoku_pv.pt", help="starting weights")
     ap.add_argument("--data", nargs="+", required=True, help="self-play .npz files")
     ap.add_argument("--out", default="models/sp/gen1.pt")
     ap.add_argument("--gomocup", default="data/gomoku_15x15.npz")
